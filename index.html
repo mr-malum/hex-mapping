@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Hex Mapping Prototype v12b</title>
+<title>Hex Mapping Prototype v14</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 <style>
@@ -249,7 +249,7 @@
 <body>
 <div id="app">
   <aside>
-    <h1>Hex Mapping Prototype v12b</h1>
+    <h1>Hex Mapping Prototype v14</h1>
     <p>Standalone prototype. Flat-top hexes, drag terrain, POI glyphs, snapped region borders, roads, rivers, JSON export, and CSV import.</p>
 
     <h2>Grid</h2>
@@ -259,7 +259,8 @@
     </div>
     <button id="randomize-terrain-button">Randomize Terrain</button>
     <button id="randomize-features-button">Randomize Features Only</button>
-    <p class="small">Persistent world IDs use an origin of <strong>300:300</strong>, so the map can eventually expand north/west without negative IDs. Randomize changes only base terrain/features and leaves POIs, roads, rivers, and borders alone.</p>
+    <button id="randomize-natural-button">Randomize Natural Map</button>
+    <p class="small">Persistent world IDs use an origin of <strong>300:300</strong>, so the map can eventually expand north/west without negative IDs. Randomize changes only base terrain/features and leaves POIs, roads, rivers, and borders alone. Natural Map tries to create broader regions, coastlines, and mountain chains.</p>
 
     <h2>View</h2>
     <div class="two-col">
@@ -820,15 +821,25 @@ function inwardPoint(point, center, amount = 0.22) {
   };
 }
 
+function midpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
 function edgeBlendPolygon(hex, edgeName) {
   const center = centerOf(hex.col, hex.row);
   const pts = hexPoints(center.x, center.y);
   const index = EDGE_NAMES.indexOf(edgeName);
   const a = pts[index];
   const b = pts[(index + 1) % 6];
-  const ai = inwardPoint(a, center, 0.34);
-  const bi = inwardPoint(b, center, 0.34);
-  return [a, b, bi, ai];
+  const mid = midpoint(a, b);
+
+  // Wider, shallower blend wedge: covers more of the neighboring hex's
+  // corresponding section without pushing as deeply into the current hex.
+  const ai = inwardPoint(a, center, 0.22);
+  const bi = inwardPoint(b, center, 0.22);
+  const mi = inwardPoint(mid, center, 0.30);
+
+  return [a, b, bi, mi, ai];
 }
 
 function shouldRenderBlendOnThisSide(hex, neighbor) {
@@ -856,7 +867,7 @@ function renderEdgeBlendForHex(hex) {
     const poly = svgElement("polygon", {
       points: pointsString(edgeBlendPolygon(hex, edgeName)),
       fill: neighborBase.color,
-      opacity: "0.28",
+      opacity: "0.24",
       class: "edge-blend"
     });
     svg.appendChild(poly);
@@ -903,6 +914,230 @@ function randomizeTerrain({ featuresOnly = false } = {}) {
   render();
 }
 
+
+
+function getNeighborHexes(hex) {
+  return EDGE_NAMES.map(edgeName => getNeighborHex(hex, edgeName)).filter(Boolean);
+}
+
+function setHexBaseFeature(hex, baseTerrain, terrainFeature = null) {
+  hex.baseTerrain = baseTerrain;
+  const feature = terrainFeature ?? randomFeatureForBase(baseTerrain);
+  const validFeature = isFeatureValidForBase(baseTerrain, feature)
+    ? feature
+    : (getValidFeaturesForBase(baseTerrain)[0] || "none");
+  hex.terrainFeature = validFeature;
+  hex.terrain = getTerrainDisplayName(baseTerrain, validFeature);
+}
+
+function randomHexFrom(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function growBlob(seedHex, size, baseTerrain, options = {}) {
+  const { boundaryOnly = false } = options;
+  const frontier = [seedHex];
+  const visited = new Set([seedHex.id]);
+  let placed = 0;
+
+  while (frontier.length && placed < size) {
+    const current = frontier.splice(Math.floor(Math.random() * frontier.length), 1)[0];
+    if (!current) continue;
+
+    if (!boundaryOnly || current.col === 0 || current.row === 0 || current.col === GRID_COLS - 1 || current.row === GRID_ROWS - 1) {
+      current.baseTerrain = baseTerrain;
+      placed += 1;
+    }
+
+    const neighbors = getNeighborHexes(current).sort(() => Math.random() - 0.5);
+    neighbors.forEach(neighbor => {
+      if (!visited.has(neighbor.id) && Math.random() < 0.88) {
+        visited.add(neighbor.id);
+        frontier.push(neighbor);
+      }
+    });
+  }
+}
+
+function growChain(seedHex, length, baseTerrain) {
+  let current = seedHex;
+  let previous = null;
+
+  for (let i = 0; i < length && current; i++) {
+    current.baseTerrain = baseTerrain;
+    const neighbors = getNeighborHexes(current).filter(n => !previous || n.id !== previous.id);
+    if (!neighbors.length) break;
+
+    // Slightly prefer forward-ish continuation by occasionally keeping same general neighborhood.
+    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+    previous = current;
+    current = next;
+
+    // Add some shoulder terrain around the chain.
+    getNeighborHexes(previous).forEach(n => {
+      if (Math.random() < 0.24 && ["plains", "grassland", "forest_floor"].includes(n.baseTerrain)) {
+        n.baseTerrain = "rock";
+      }
+    });
+  }
+}
+
+function smoothBaseTerrains(passes = 2) {
+  for (let pass = 0; pass < passes; pass++) {
+    const updates = [];
+    Object.values(state.hexes).forEach(hex => {
+      const counts = {};
+      getNeighborHexes(hex).forEach(n => {
+        counts[n.baseTerrain] = (counts[n.baseTerrain] || 0) + 1;
+      });
+      const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      if (!winner) return;
+
+      const [baseTerrain, count] = winner;
+      if (count >= 4 && Math.random() < 0.80) {
+        updates.push([hex.id, baseTerrain]);
+      } else if (count >= 3 && Math.random() < 0.35) {
+        updates.push([hex.id, baseTerrain]);
+      }
+    });
+
+    updates.forEach(([id, baseTerrain]) => {
+      state.hexes[id].baseTerrain = baseTerrain;
+    });
+  }
+}
+
+function applyCoastlineCleanup() {
+  const updates = [];
+  Object.values(state.hexes).forEach(hex => {
+    const neighbors = getNeighborHexes(hex);
+    const touchesDeepSea = neighbors.some(n => n.baseTerrain === "deep_sea");
+    const touchesSea = neighbors.some(n => n.baseTerrain === "sea");
+    const touchesWater = neighbors.some(n => ["deep_sea", "sea", "inland_water"].includes(n.baseTerrain));
+
+    if (hex.baseTerrain === "deep_sea" && neighbors.some(n => !["deep_sea", "sea"].includes(n.baseTerrain))) {
+      updates.push([hex.id, "sea"]);
+      return;
+    }
+
+    if (!["deep_sea", "sea", "inland_water", "beach"].includes(hex.baseTerrain) && (touchesDeepSea || touchesSea)) {
+      if (Math.random() < 0.55) updates.push([hex.id, "beach"]);
+      return;
+    }
+
+    if (hex.baseTerrain === "plains" && touchesWater && Math.random() < 0.18) {
+      updates.push([hex.id, "wetland"]);
+    }
+  });
+
+  updates.forEach(([id, baseTerrain]) => {
+    state.hexes[id].baseTerrain = baseTerrain;
+  });
+}
+
+function assignNaturalFeatures() {
+  Object.values(state.hexes).forEach(hex => {
+    let feature = "none";
+    switch (hex.baseTerrain) {
+      case "deep_sea":
+      case "sea":
+      case "inland_water":
+        feature = "none";
+        break;
+      case "beach":
+        feature = Math.random() < 0.26 ? randomItem(["dunes", "cliffs"]) : "none";
+        break;
+      case "plains":
+        feature = randomItem(["none", "none", "light_forest", "hills", "none", "lone_mountain"]);
+        break;
+      case "grassland":
+        feature = randomItem(["none", "none", "light_forest", "heavy_forest", "hills", "forested_hills", "farmland"]);
+        break;
+      case "forest_floor":
+        feature = randomItem(["light_forest", "heavy_forest", "heavy_forest", "hills", "forested_hills"]);
+        break;
+      case "jungle_floor":
+        feature = randomItem(["jungle", "jungle", "jungle", "hills"]);
+        break;
+      case "wetland":
+        feature = randomItem(["none", "marsh", "light_forest", "heavy_forest"]);
+        break;
+      case "desert":
+        feature = randomItem(["none", "dunes", "dunes", "hills", "cactus_scrub", "lone_mountain"]);
+        break;
+      case "deep_desert":
+        feature = randomItem(["none", "dunes", "hills", "cliffs", "cactus_scrub", "lone_mountain"]);
+        break;
+      case "badlands":
+        feature = randomItem(["none", "hills", "cliffs"]);
+        break;
+      case "deep_badlands":
+        feature = randomItem(["none", "hills", "cliffs", "lone_mountain"]);
+        break;
+      case "snow":
+        feature = randomItem(["none", "hills", "mountains", "snowcap", "light_forest"]);
+        break;
+      case "rock":
+        feature = randomItem(["hills", "mountains", "mountains", "forested_mountains", "lone_mountain", "snowcap"]);
+        break;
+      case "ashland":
+        feature = randomItem(["none", "volcano", "lone_mountain"]);
+        break;
+      default:
+        feature = randomFeatureForBase(hex.baseTerrain);
+    }
+    setHexBaseFeature(hex, hex.baseTerrain, feature);
+  });
+}
+
+function randomizeNaturalMap() {
+  const allHexes = Object.values(state.hexes);
+  if (!allHexes.length) return;
+
+  // Start from a gentle default landmass.
+  allHexes.forEach(hex => {
+    hex.baseTerrain = Math.random() < 0.55 ? "grassland" : "plains";
+    hex.terrainFeature = "none";
+    hex.terrain = getTerrainDisplayName(hex.baseTerrain, hex.terrainFeature);
+  });
+
+  const borderHexes = allHexes.filter(hex => hex.col === 0 || hex.row === 0 || hex.col === GRID_COLS - 1 || hex.row === GRID_ROWS - 1);
+
+  // Oceans around the boundary.
+  for (let i = 0; i < Math.max(3, Math.floor((GRID_COLS + GRID_ROWS) / 18)); i++) {
+    growBlob(randomHexFrom(borderHexes), Math.floor(allHexes.length * (0.035 + Math.random() * 0.03)), randomItem(["sea", "deep_sea"]));
+  }
+
+  // Inland lakes / marshy water.
+  for (let i = 0; i < Math.max(1, Math.floor(allHexes.length / 550)); i++) {
+    growBlob(randomHexFrom(allHexes), Math.floor(allHexes.length * (0.01 + Math.random() * 0.01)), "inland_water");
+  }
+
+  // Forests and jungles.
+  for (let i = 0; i < Math.max(2, Math.floor(allHexes.length / 500)); i++) {
+    growBlob(randomHexFrom(allHexes), Math.floor(allHexes.length * (0.025 + Math.random() * 0.02)), randomItem(["forest_floor", "forest_floor", "jungle_floor", "wetland"]));
+  }
+
+  // Deserts and badlands.
+  for (let i = 0; i < Math.max(2, Math.floor(allHexes.length / 650)); i++) {
+    growBlob(randomHexFrom(allHexes), Math.floor(allHexes.length * (0.022 + Math.random() * 0.02)), randomItem(["desert", "deep_desert", "badlands", "deep_badlands", "ashland"]));
+  }
+
+  // Mountain chains.
+  for (let i = 0; i < Math.max(1, Math.floor(allHexes.length / 700)); i++) {
+    growChain(randomHexFrom(allHexes), Math.floor(6 + Math.random() * 10), "rock");
+  }
+
+  // Snow pockets near rock or randomly on larger maps.
+  for (let i = 0; i < Math.max(1, Math.floor(allHexes.length / 1200)); i++) {
+    growBlob(randomHexFrom(allHexes), Math.floor(allHexes.length * (0.008 + Math.random() * 0.006)), "snow");
+  }
+
+  smoothBaseTerrains(2);
+  applyCoastlineCleanup();
+  assignNaturalFeatures();
+  render();
+}
 
 function nearestEdgeFromMouse(event, hex) {
   const pt = svg.createSVGPoint();
@@ -1849,6 +2084,10 @@ document.getElementById("randomize-terrain-button").addEventListener("click", ()
 
 document.getElementById("randomize-features-button").addEventListener("click", () => {
   randomizeTerrain({ featuresOnly: true });
+});
+
+document.getElementById("randomize-natural-button").addEventListener("click", () => {
+  randomizeNaturalMap();
 });
 
 initHexes(12, 12, true);
