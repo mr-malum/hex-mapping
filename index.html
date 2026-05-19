@@ -257,7 +257,9 @@
       <button id="small-grid-button">12×12 Test</button>
       <button id="large-grid-button">50×50 Grid</button>
     </div>
-    <p class="small">Persistent world IDs use an origin of <strong>300:300</strong>, so the map can eventually expand north/west without negative IDs.</p>
+    <button id="randomize-terrain-button">Randomize Terrain</button>
+    <button id="randomize-features-button">Randomize Features Only</button>
+    <p class="small">Persistent world IDs use an origin of <strong>300:300</strong>, so the map can eventually expand north/west without negative IDs. Randomize changes only base terrain/features and leaves POIs, roads, rivers, and borders alone.</p>
 
     <h2>View</h2>
     <div class="two-col">
@@ -380,12 +382,11 @@ const TERRAIN = [
   { id: "snowcapped_mountains", label: "Snowcapped Mountains", color: "#b8bdc0", aliases: ["Snowcapped Mountains"] },
   { id: "snowfield", label: "Snowfield", color: "#dce5e6", aliases: ["Snowfield", "Snow"] },
   { id: "sandy_desert", label: "Sandy Desert", color: "#d4b36f", aliases: ["Sandy Desert"] },
-  { id: "rocky_desert", label: "Rocky Desert", color: "#b88955", aliases: ["Rocky Desert"] },
+  { id: "deep_desert", label: "Deep Desert", color: "#b88955", aliases: ["Deep Desert", "Rocky Desert"] },
   { id: "coastal_desert", label: "Coastal Desert", color: "#caa567", aliases: ["Coastal Desert"] },
   { id: "badlands", label: "Badlands", color: "#a56545", aliases: ["Badlands"] },
   { id: "deep_badlands", label: "Deep Badlands", color: "#7d4335", aliases: ["Deep Badlands", "Full Badlands"] },
-  { id: "broken_lands", label: "Broken Lands", color: "#61453a", aliases: ["Broken Lands"] },
-  { id: "cactus_scrub", label: "Cactus Scrub", color: "#9a9156", aliases: ["Cactus", "Cactus Scrub"] },
+    { id: "cactus_scrub", label: "Cactus Scrub", color: "#9a9156", aliases: ["Cactus", "Cactus Scrub"] },
   { id: "lone_mountain", label: "Lone Mountain", color: "#5e5a55", aliases: ["Lone Mountain", "Dormant Volcano"] },
   { id: "volcano", label: "Volcano", color: "#453232", aliases: ["Volcano"] }
 ];
@@ -402,11 +403,10 @@ const BASE_TERRAINS = [
   { id: "jungle_floor", label: "Jungle Floor", color: "#27663c" },
   { id: "wetland", label: "Wetland", color: "#3d6856" },
   { id: "desert", label: "Desert", color: "#d4b36f" },
-  { id: "rocky_desert", label: "Rocky Desert", color: "#b88955" },
+  { id: "deep_desert", label: "Deep Desert", color: "#b88955" },
   { id: "badlands", label: "Badlands", color: "#a56545" },
   { id: "deep_badlands", label: "Deep Badlands", color: "#7d4335" },
-  { id: "broken_lands", label: "Broken Lands", color: "#61453a" },
-  { id: "snow", label: "Snow", color: "#dce5e6" },
+    { id: "snow", label: "Snow", color: "#dce5e6" },
   { id: "rock", label: "Rock", color: "#756e66" },
   { id: "ashland", label: "Ashland", color: "#453232" }
 ];
@@ -444,10 +444,9 @@ const VALID_FEATURES_BY_BASE = {
   jungle_floor: ["jungle", "hills"],
   wetland: ["none", "marsh", "light_forest", "heavy_forest"],
   desert: ["none", "dunes", "hills", "cactus_scrub", "lone_mountain"],
-  rocky_desert: ["none", "hills", "cliffs", "lone_mountain"],
+  deep_desert: ["none", "dunes", "hills", "cliffs", "cactus_scrub", "lone_mountain"],
   badlands: ["none", "hills", "cliffs"],
-  deep_badlands: ["none", "hills", "cliffs"],
-  broken_lands: ["none", "cliffs", "lone_mountain"],
+  deep_badlands: ["none", "hills", "cliffs", "lone_mountain"],
   snow: ["none", "hills", "mountains", "snowcap", "light_forest"],
   rock: ["none", "hills", "mountains", "forested_mountains", "snowcap", "lone_mountain"],
   ashland: ["none", "volcano", "lone_mountain"]
@@ -494,10 +493,12 @@ const TERRAIN_COMBO_NAMES = {
   "desert:cactus_scrub": "Cactus Scrub",
   "desert:lone_mountain": "Lone Mountain",
 
-  "rocky_desert:none": "Rocky Desert",
-  "rocky_desert:hills": "Rocky Desert",
-  "rocky_desert:cliffs": "Rocky Desert",
-  "rocky_desert:lone_mountain": "Lone Mountain",
+  "deep_desert:none": "Deep Desert",
+  "deep_desert:dunes": "Deep Desert",
+  "deep_desert:hills": "Rocky Desert",
+  "deep_desert:cliffs": "Desert Cliffs",
+  "deep_desert:cactus_scrub": "Cactus Scrub",
+  "deep_desert:lone_mountain": "Lone Mountain",
 
   "badlands:none": "Badlands",
   "badlands:hills": "Badlands",
@@ -506,10 +507,7 @@ const TERRAIN_COMBO_NAMES = {
   "deep_badlands:none": "Deep Badlands",
   "deep_badlands:hills": "Deep Badlands",
   "deep_badlands:cliffs": "Deep Badlands",
-
-  "broken_lands:none": "Broken Lands",
-  "broken_lands:cliffs": "Broken Lands",
-  "broken_lands:lone_mountain": "Broken Lands",
+  "deep_badlands:lone_mountain": "Lone Mountain",
 
   "snow:none": "Snowfield",
   "snow:hills": "Snowy Hills",
@@ -556,13 +554,14 @@ const LEGACY_TERRAIN_TO_COMBO = {
   "Snowcapped Mountains": ["rock", "snowcap"],
 
   "Sandy Desert": ["desert", "none"],
-  "Rocky Desert": ["rocky_desert", "hills"],
+  "Deep Desert": ["deep_desert", "none"],
+  "Rocky Desert": ["deep_desert", "hills"],
   "Coastal Desert": ["desert", "dunes"],
 
   "Badlands": ["badlands", "none"],
   "Full Badlands": ["deep_badlands", "none"],
   "Deep Badlands": ["deep_badlands", "none"],
-  "Broken Lands": ["broken_lands", "none"],
+  "Broken Lands": ["deep_badlands", "cliffs"],
 
   "Cactus": ["desert", "cactus_scrub"],
   "Cactus Scrub": ["desert", "cactus_scrub"],
@@ -828,19 +827,37 @@ function edgeBlendPolygon(hex, edgeName) {
   return [a, b, bi, ai];
 }
 
-function shouldBlendEdge(hex, neighbor) {
+const WATER_BASES = new Set(["deep_sea", "sea", "inland_water"]);
+
+function shouldRenderBlendOnThisSide(hex, neighbor) {
   if (!neighbor) return false;
+
   hydrateHexTerrainFields(hex);
   hydrateHexTerrainFields(neighbor);
-  return hex.baseTerrain !== neighbor.baseTerrain;
+
+  if (hex.baseTerrain === neighbor.baseTerrain) return false;
+
+  const hexIsWater = WATER_BASES.has(hex.baseTerrain);
+  const neighborIsWater = WATER_BASES.has(neighbor.baseTerrain);
+
+  // Put water/land transitions on the land side only.
+  // This prevents stray-looking blue slivers from being drawn over water
+  // and then seeming to float when nearby land gets repainted.
+  if (hexIsWater && !neighborIsWater) return false;
+  if (!hexIsWater && neighborIsWater) return true;
+
+  // For non-water transitions, draw each shared boundary once.
+  // This keeps edge bleeding from double-stacking on both adjacent hexes.
+  return hex.id < neighbor.id;
 }
+
 
 function renderEdgeBlendForHex(hex) {
   if (!state.showEdgeBlend) return;
 
   EDGE_NAMES.forEach(edgeName => {
     const neighbor = getNeighborHex(hex, edgeName);
-    if (!shouldBlendEdge(hex, neighbor)) return;
+    if (!shouldRenderBlendOnThisSide(hex, neighbor)) return;
 
     const neighborBase = baseTerrainById[neighbor.baseTerrain] || baseTerrainById.plains;
     const poly = svgElement("polygon", {
@@ -852,6 +869,47 @@ function renderEdgeBlendForHex(hex) {
     svg.appendChild(poly);
   });
 }
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function weightedRandomBaseTerrain() {
+  const pool = [
+    "plains", "plains", "plains",
+    "grassland", "grassland", "grassland",
+    "forest_floor", "forest_floor",
+    "desert", "deep_desert", "badlands",
+    "sea", "sea", "deep_sea", "inland_water",
+    "beach", "wetland", "jungle_floor", "rock", "snow", "ashland"
+  ];
+
+  return randomItem(pool);
+}
+
+function randomFeatureForBase(baseTerrain) {
+  const options = getValidFeaturesForBase(baseTerrain);
+  if (!options.length) return "none";
+
+  // Weight toward simpler terrain so the randomizer is useful
+  // for quick test maps instead of pure visual confetti.
+  const weighted = [...options, "none", "none"].filter(option => options.includes(option));
+  return randomItem(weighted);
+}
+
+function randomizeTerrain({ featuresOnly = false } = {}) {
+  Object.values(state.hexes).forEach(hex => {
+    const baseTerrain = featuresOnly ? hex.baseTerrain : weightedRandomBaseTerrain();
+    const terrainFeature = randomFeatureForBase(baseTerrain);
+
+    hex.baseTerrain = baseTerrain;
+    hex.terrainFeature = terrainFeature;
+    hex.terrain = getTerrainDisplayName(baseTerrain, terrainFeature);
+  });
+
+  render();
+}
+
 
 function nearestEdgeFromMouse(event, hex) {
   const pt = svg.createSVGPoint();
@@ -1790,6 +1848,14 @@ document.getElementById("large-grid-button").addEventListener("click", () => {
   WORLD_ORIGIN_X = 300;
   WORLD_ORIGIN_Y = 300;
   initHexes(50, 50, false);
+});
+
+document.getElementById("randomize-terrain-button").addEventListener("click", () => {
+  randomizeTerrain({ featuresOnly: false });
+});
+
+document.getElementById("randomize-features-button").addEventListener("click", () => {
+  randomizeTerrain({ featuresOnly: true });
 });
 
 initHexes(12, 12, true);
