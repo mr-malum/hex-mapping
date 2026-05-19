@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Hex Mapping Prototype v20c</title>
+<title>Hex Mapping Prototype v20f</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
 <style>
@@ -269,7 +269,7 @@
 <body>
 <div id="app">
   <aside>
-    <h1>Hex Mapping Prototype v20c</h1>
+    <h1>Hex Mapping Prototype v20f</h1>
     <p>Standalone prototype. Flat-top hexes, drag terrain, POI glyphs, snapped region borders, roads, rivers, JSON export, and CSV import.</p>
 
     <h2>Grid</h2>
@@ -1050,23 +1050,37 @@ function outsideCornerPatchCandidate(hex, leftEdgeIndex) {
   const next = pts[(rightEdgeIndex + 1) % 6];
   const candidates = [];
 
-  // Candidate 1: bleed source comes from the left edge neighbor and should
-  // continue around the outside corner into the right-side host relationship.
-  if (leftNeighbor && rightNeighbor && shouldRenderBlendOnThisSide(hex, leftNeighbor) && hexesTouch(leftNeighbor, rightNeighbor) && shouldRenderBlendOnThisSide(rightNeighbor, leftNeighbor)) {
-    const leftPoly = edgeBlendPolygon(hex, EDGE_NAMES[leftEdgeIndex]);
+  // Keep connector patches local to the corner.
+  // Earlier versions used distal points from the full edge wedge, which made
+  // long pointy/stair-stepped artifacts. This only fills a small shard at the
+  // outside corner.
+  const prevLocal = pointAlong(shared, previous, 0.22);
+  const nextLocal = pointAlong(shared, next, 0.22);
+  const inwardLocal = inwardPoint(shared, center, 0.23);
+
+  if (
+    leftNeighbor &&
+    rightNeighbor &&
+    shouldRenderBlendOnThisSide(hex, leftNeighbor) &&
+    hexesTouch(leftNeighbor, rightNeighbor) &&
+    shouldRenderBlendOnThisSide(rightNeighbor, leftNeighbor)
+  ) {
     candidates.push({
       baseTerrain: leftNeighbor.baseTerrain,
-      polygon: [shared, pointAlong(shared, next, 0.34), leftPoly[2]]
+      polygon: [shared, nextLocal, inwardLocal]
     });
   }
 
-  // Candidate 2: bleed source comes from the right edge neighbor and should
-  // continue around the outside corner into the left-side host relationship.
-  if (leftNeighbor && rightNeighbor && shouldRenderBlendOnThisSide(hex, rightNeighbor) && hexesTouch(leftNeighbor, rightNeighbor) && shouldRenderBlendOnThisSide(leftNeighbor, rightNeighbor)) {
-    const rightPoly = edgeBlendPolygon(hex, EDGE_NAMES[rightEdgeIndex]);
+  if (
+    leftNeighbor &&
+    rightNeighbor &&
+    shouldRenderBlendOnThisSide(hex, rightNeighbor) &&
+    hexesTouch(leftNeighbor, rightNeighbor) &&
+    shouldRenderBlendOnThisSide(leftNeighbor, rightNeighbor)
+  ) {
     candidates.push({
       baseTerrain: rightNeighbor.baseTerrain,
-      polygon: [shared, rightPoly[4], pointAlong(shared, previous, 0.34)]
+      polygon: [shared, inwardLocal, prevLocal]
     });
   }
 
@@ -1104,7 +1118,7 @@ function renderEdgeBlendForHex(hex) {
     const patch = svgElement("polygon", {
       points: pointsString(patchData.polygon),
       fill: chosenTerrain.color,
-      opacity: "0.22",
+      opacity: "0.18",
       class: "edge-blend outside-corner-blend"
     });
     svg.appendChild(patch);
