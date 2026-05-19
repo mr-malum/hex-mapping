@@ -1,1 +1,1802 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Hex Mapping Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<style>
+  :root {
+    --bg: #1f1a14;
+    --panel: #2c241b;
+    --panel2: #3a3024;
+    --text: #f4ead7;
+    --muted: #c5b79f;
+    --accent: #e8c46a;
+    --border: #6d5a40;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  #app {
+    display: grid;
+    grid-template-columns: 315px 1fr 300px;
+    height: 100vh;
+  }
+
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 14px;
+    overflow-y: auto;
+  }
+
+  #inspector {
+    border-right: none;
+    border-left: 1px solid var(--border);
+  }
+
+  h1 { margin: 0 0 4px; font-size: 20px; }
+
+  h2 {
+    margin: 18px 0 8px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+
+  p {
+    color: var(--muted);
+    line-height: 1.35;
+    font-size: 13px;
+  }
+
+  button,
+  select,
+  input {
+    width: 100%;
+    margin: 4px 0;
+    padding: 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--text);
+    font: inherit;
+  }
+
+  button { cursor: pointer; }
+
+  button.active {
+    background: #6d552b;
+    border-color: var(--accent);
+  }
+
+  button:hover { filter: brightness(1.12); }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .terrain-button {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 8px;
+    align-items: center;
+    text-align: left;
+  }
+
+  .swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.35);
+  }
+
+  #map-wrap {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background:
+      radial-gradient(circle at center, rgba(255,255,255,0.05), transparent 60%),
+      #14110d;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .hex {
+    cursor: pointer;
+    transition: filter 0.05s;
+  }
+
+  .edge-blend {
+    pointer-events: none;
+    mix-blend-mode: normal;
+  }
+
+  body.panning #map-wrap {
+    cursor: grabbing;
+  }
+
+  .hex:hover { filter: brightness(1.16); }
+
+  .hex-label {
+    pointer-events: none;
+    user-select: none;
+    font-size: 8px;
+    fill: rgba(255,255,255,0.86);
+    text-anchor: middle;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: rgba(0,0,0,0.45);
+    stroke-width: 2px;
+  }
+
+  .coord-label {
+    pointer-events: none;
+    user-select: none;
+    font-size: 7px;
+    fill: rgba(0,0,0,0.58);
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+
+  .poi-marker { pointer-events: none; }
+
+  .poi-bg {
+    fill: rgba(24, 18, 10, 0.88);
+    stroke: #f2d37b;
+    stroke-width: 2;
+  }
+
+  .poi-symbol {
+    fill: #f2d37b;
+    font-size: 18px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    font-weight: bold;
+  }
+
+  .region-border {
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+
+  .hover-edge {
+    stroke: #55e6ff;
+    stroke-width: 7;
+    stroke-linecap: round;
+    opacity: 0.85;
+    pointer-events: none;
+  }
+
+  .road {
+    stroke: #8f6335;
+    stroke-width: 6;
+    stroke-linecap: round;
+    fill: none;
+    pointer-events: none;
+  }
+
+  .river {
+    stroke: #3c9fc9;
+    stroke-width: 6;
+    stroke-linecap: round;
+    fill: none;
+    pointer-events: none;
+  }
+
+  .selected-outline {
+    fill: none;
+    stroke: #ffdf6e;
+    stroke-width: 4;
+    pointer-events: none;
+  }
+
+  .pending-path-outline {
+    fill: none;
+    stroke: #55e6ff;
+    stroke-width: 3;
+    stroke-dasharray: 6 4;
+    pointer-events: none;
+  }
+
+  .small { font-size: 12px; color: var(--muted); }
+
+  .data-card {
+    padding: 10px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    margin: 8px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .toolbar-note {
+    padding: 8px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: rgba(0,0,0,0.15);
+  }
+
+  @media (max-width: 950px) {
+    body { overflow: auto; }
+    #app { display: block; height: auto; }
+    aside { height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    #map-wrap { height: 72vh; }
+    #inspector { border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+
+<body>
+<div id="app">
+  <aside>
+    <h1>Hex Mapping Prototype</h1>
+    <p>Standalone prototype. Flat-top hexes, drag terrain, POI glyphs, snapped region borders, roads, rivers, JSON export, and CSV import.</p>
+
+    <h2>Grid</h2>
+    <div class="two-col">
+      <button id="small-grid-button">12×12 Test</button>
+      <button id="large-grid-button">50×50 Grid</button>
+    </div>
+    <p class="small">Persistent world IDs use an origin of <strong>300:300</strong>, so the map can eventually expand north/west without negative IDs.</p>
+
+    <h2>View</h2>
+    <div class="two-col">
+      <button id="zoom-out-button">Zoom Out</button>
+      <button id="zoom-in-button">Zoom In</button>
+    </div>
+    <button id="zoom-reset-button">Reset Zoom</button>
+    <div class="two-col">
+      <button id="terrain-label-toggle">Terrain Labels: On</button>
+      <button id="coord-label-toggle">Coords: On</button>
+    </div>
+    <button id="edge-blend-toggle">Edge Bleed: On</button>
+    <p class="small">Use the mouse wheel over the map to zoom. Pan with the Pan tool, or hold <strong>Shift</strong> and drag, or use middle/right mouse drag. Arrow keys also pan.</p>
+
+    <h2>Tool</h2>
+    <button data-tool="pan" class="tool-button">Pan / Move Map</button>
+    <button data-tool="terrain" class="tool-button active">Terrain Brush</button>
+    <button data-tool="poi" class="tool-button">Place POI</button>
+    <button data-tool="region-border" class="tool-button">Region Border</button>
+    <button data-tool="road" class="tool-button">Draw Road</button>
+    <button data-tool="river" class="tool-button">Draw River</button>
+    <button data-tool="erase" class="tool-button">Erase Overlay</button>
+    <button data-tool="inspect" class="tool-button">Inspect</button>
+
+    <h2>Base Terrain</h2>
+    <div id="base-terrain-list"></div>
+
+    <h2>Feature Overlay</h2>
+    <select id="terrain-feature-select"></select>
+    <p class="small">The feature list is filtered by the selected base terrain, preventing nonsense combos like Ocean + Forest. Farmland is treated as a Grassland feature, not a separate biome.</p>
+
+    <h2>POI Type</h2>
+    <select id="poi-type"></select>
+
+    <h2>Region Border</h2>
+    <input id="region-name" value="New Region" />
+    <select id="region-color">
+      <option value="#f2d37b">Gold</option>
+      <option value="#e35d5d">Red</option>
+      <option value="#72d18f">Green</option>
+      <option value="#69a7e8">Blue</option>
+      <option value="#c07bea">Purple</option>
+      <option value="#f28f45">Orange</option>
+    </select>
+    <p class="small">Hover near a face, then click or drag to toggle snapped edge segments.</p>
+
+    <h2>Road / River</h2>
+    <p class="small toolbar-note">Roads and rivers now draw one segment per click-pair. Click a start hex, then an end hex. After the segment is drawn, the tool resets and waits for a new start hex.</p>
+
+    <h2>Import / Export</h2>
+    <button id="export-button">Export JSON</button>
+    <button id="copy-button">Copy JSON</button>
+
+    <label class="small">CSV Coordinate Order</label>
+    <select id="csv-coordinate-order">
+      <option value="xy">Future canonical: Hex_ID = X:Y / column:row</option>
+      <option value="yx">Legacy/current-map import: Hex_ID = row:column, swap to X:Y</option>
+    </select>
+    <p class="small">Use the legacy/swap option if the imported CSV appears transposed compared to the old map.</p>
+
+    <label class="small">Import prototype JSON</label>
+    <input type="file" id="import-json-file" accept="application/json" />
+
+    <label class="small">Import Kadesh hexes.csv</label>
+    <input type="file" id="import-csv-file" accept=".csv,text/csv" />
+  </aside>
+
+  <main id="map-wrap">
+    <svg id="map"></svg>
+  </main>
+
+  <aside id="inspector">
+    <h2>Inspector</h2>
+    <div id="selected-info" class="data-card">Click a hex.</div>
+
+    <h2>Summary</h2>
+    <div id="summary" class="data-card"></div>
+
+    <h2>Import Notes</h2>
+    <p>
+      CSV import expects columns like <strong>Hex_ID</strong>, <strong>Terrain</strong>, and optionally <strong>Region_ID_Ref</strong>.
+      It ignores <strong>Map_XY</strong> for now and treats <strong>Hex_ID</strong> as authoritative.
+      The coordinate-order selector lets you migrate legacy row:column data into future X:Y / column:row IDs.
+    </p>
+  </aside>
+</div>
+
+<script>
+let GRID_COLS = 12;
+let GRID_ROWS = 12;
+let WORLD_ORIGIN_X = 300;
+let WORLD_ORIGIN_Y = 300;
+
+const HEX_RADIUS = 42;
+const HEX_WIDTH = HEX_RADIUS * 2;
+const HEX_HEIGHT = Math.sqrt(3) * HEX_RADIUS;
+const COL_STEP = HEX_RADIUS * 1.5;
+const ROW_STEP = HEX_HEIGHT;
+
+const EDGE_NAMES = ["E", "SE", "SW", "W", "NW", "NE"];
+
+const TERRAIN = [
+  { id: "deep_sea", label: "Deep Sea", color: "#14384f", aliases: ["Deep Sea", "Ocean"] },
+  { id: "sea", label: "Sea", color: "#2e6e8f", aliases: ["Sea"] },
+  { id: "inland_water", label: "Inland Water", color: "#4d91a8", aliases: ["Inland Water", "Inland Waters"] },
+  { id: "beach", label: "Beach", color: "#dbc487", aliases: ["Beach"] },
+  { id: "plains", label: "Plains", color: "#c1b06d", aliases: ["Plains"] },
+  { id: "grassland", label: "Grassland", color: "#8fa75f", aliases: ["Grassland"] },
+  { id: "cultivated_farmland", label: "Cultivated Farmland", color: "#b59a57", aliases: ["Cultivated Farmland"] },
+  { id: "light_forest", label: "Light Forest", color: "#5f8c4f", aliases: ["Light Forest"] },
+  { id: "heavy_forest", label: "Heavy Forest", color: "#315b39", aliases: ["Heavy Forest"] },
+  { id: "jungle", label: "Jungle", color: "#27663c", aliases: ["Jungle"] },
+  { id: "evergreen_wetlands", label: "Evergreen Wetlands", color: "#3d6856", aliases: ["Evergreen Wetlands"] },
+  { id: "hills", label: "Hills", color: "#9b8658", aliases: ["Hills"] },
+  { id: "grassy_hills", label: "Grassy Hills", color: "#87945c", aliases: ["Grassy Hills"] },
+  { id: "shrubland_hills", label: "Shrubland Hills", color: "#8c7d54", aliases: ["Shrubland Hills"] },
+  { id: "forested_hills", label: "Forested Hills", color: "#557047", aliases: ["Forested Hills"] },
+  { id: "mountains", label: "Mountains", color: "#756e66", aliases: ["Mountains"] },
+  { id: "forested_mountains", label: "Forested Mountains", color: "#53604d", aliases: ["Forested Mountains"] },
+  { id: "snowcapped_mountains", label: "Snowcapped Mountains", color: "#b8bdc0", aliases: ["Snowcapped Mountains"] },
+  { id: "snowfield", label: "Snowfield", color: "#dce5e6", aliases: ["Snowfield", "Snow"] },
+  { id: "sandy_desert", label: "Sandy Desert", color: "#d4b36f", aliases: ["Sandy Desert"] },
+  { id: "rocky_desert", label: "Rocky Desert", color: "#b88955", aliases: ["Rocky Desert"] },
+  { id: "coastal_desert", label: "Coastal Desert", color: "#caa567", aliases: ["Coastal Desert"] },
+  { id: "badlands", label: "Badlands", color: "#a56545", aliases: ["Badlands"] },
+  { id: "deep_badlands", label: "Deep Badlands", color: "#7d4335", aliases: ["Deep Badlands", "Full Badlands"] },
+  { id: "broken_lands", label: "Broken Lands", color: "#61453a", aliases: ["Broken Lands"] },
+  { id: "cactus_scrub", label: "Cactus Scrub", color: "#9a9156", aliases: ["Cactus", "Cactus Scrub"] },
+  { id: "lone_mountain", label: "Lone Mountain", color: "#5e5a55", aliases: ["Lone Mountain", "Dormant Volcano"] },
+  { id: "volcano", label: "Volcano", color: "#453232", aliases: ["Volcano"] }
+];
+
+
+const BASE_TERRAINS = [
+  { id: "deep_sea", label: "Deep Sea", color: "#14384f" },
+  { id: "sea", label: "Sea", color: "#2e6e8f" },
+  { id: "inland_water", label: "Inland Water", color: "#4d91a8" },
+  { id: "beach", label: "Beach", color: "#dbc487" },
+  { id: "plains", label: "Plains", color: "#c1b06d" },
+  { id: "grassland", label: "Grassland", color: "#8fa75f" },
+  { id: "forest_floor", label: "Forest Floor", color: "#4e7b45" },
+  { id: "jungle_floor", label: "Jungle Floor", color: "#27663c" },
+  { id: "wetland", label: "Wetland", color: "#3d6856" },
+  { id: "desert", label: "Desert", color: "#d4b36f" },
+  { id: "rocky_desert", label: "Rocky Desert", color: "#b88955" },
+  { id: "badlands", label: "Badlands", color: "#a56545" },
+  { id: "deep_badlands", label: "Deep Badlands", color: "#7d4335" },
+  { id: "broken_lands", label: "Broken Lands", color: "#61453a" },
+  { id: "snow", label: "Snow", color: "#dce5e6" },
+  { id: "rock", label: "Rock", color: "#756e66" },
+  { id: "ashland", label: "Ashland", color: "#453232" }
+];
+
+const TERRAIN_FEATURES = [
+  { id: "none", label: "None", glyph: "" },
+  { id: "light_forest", label: "Light Forest", glyph: "♧" },
+  { id: "heavy_forest", label: "Heavy Forest", glyph: "♣" },
+  { id: "jungle", label: "Jungle", glyph: "♣" },
+  { id: "hills", label: "Hills", glyph: "⌒" },
+  { id: "mountains", label: "Mountains", glyph: "▲" },
+  { id: "forested_hills", label: "Forested Hills", glyph: "♧⌒" },
+  { id: "forested_mountains", label: "Forested Mountains", glyph: "♣▲" },
+  { id: "snowcap", label: "Snowcap", glyph: "△" },
+  { id: "cactus_scrub", label: "Cactus Scrub", glyph: "♮" },
+  { id: "lone_mountain", label: "Lone Mountain", glyph: "◆" },
+  { id: "volcano", label: "Volcano", glyph: "◭" },
+  { id: "farmland", label: "Farmland", glyph: "▦" },
+  { id: "marsh", label: "Marsh", glyph: "≈" },
+  { id: "dunes", label: "Dunes", glyph: "≋" },
+  { id: "cliffs", label: "Cliffs", glyph: "▴" }
+];
+
+const baseTerrainById = Object.fromEntries(BASE_TERRAINS.map(t => [t.id, t]));
+const featureById = Object.fromEntries(TERRAIN_FEATURES.map(f => [f.id, f]));
+
+const VALID_FEATURES_BY_BASE = {
+  deep_sea: ["none"],
+  sea: ["none"],
+  inland_water: ["none", "marsh"],
+  beach: ["none", "dunes", "cliffs"],
+  plains: ["none", "light_forest", "hills", "lone_mountain"],
+  grassland: ["none", "light_forest", "heavy_forest", "hills", "forested_hills", "farmland", "lone_mountain"],
+  forest_floor: ["light_forest", "heavy_forest", "hills", "forested_hills"],
+  jungle_floor: ["jungle", "hills"],
+  wetland: ["none", "marsh", "light_forest", "heavy_forest"],
+  desert: ["none", "dunes", "hills", "cactus_scrub", "lone_mountain"],
+  rocky_desert: ["none", "hills", "cliffs", "lone_mountain"],
+  badlands: ["none", "hills", "cliffs"],
+  deep_badlands: ["none", "hills", "cliffs"],
+  broken_lands: ["none", "cliffs", "lone_mountain"],
+  snow: ["none", "hills", "mountains", "snowcap", "light_forest"],
+  rock: ["none", "hills", "mountains", "forested_mountains", "snowcap", "lone_mountain"],
+  ashland: ["none", "volcano", "lone_mountain"]
+};
+
+const TERRAIN_COMBO_NAMES = {
+  "deep_sea:none": "Deep Sea",
+  "sea:none": "Sea",
+  "inland_water:none": "Inland Water",
+  "inland_water:marsh": "Marsh",
+  "beach:none": "Beach",
+  "beach:dunes": "Beach Dunes",
+  "beach:cliffs": "Coastal Cliffs",
+
+  "plains:none": "Plains",
+  "plains:light_forest": "Light Forest",
+  "plains:hills": "Hills",
+  "grassland:farmland": "Cultivated Farmland",
+  "plains:lone_mountain": "Lone Mountain",
+
+  "grassland:none": "Grassland",
+  "grassland:light_forest": "Light Forest",
+  "grassland:heavy_forest": "Heavy Forest",
+  "grassland:hills": "Grassy Hills",
+  "grassland:forested_hills": "Forested Hills",
+  "grassland:lone_mountain": "Lone Mountain",
+
+  "forest_floor:light_forest": "Light Forest",
+  "forest_floor:heavy_forest": "Heavy Forest",
+  "forest_floor:hills": "Forested Hills",
+  "forest_floor:forested_hills": "Forested Hills",
+
+  "jungle_floor:jungle": "Jungle",
+  "jungle_floor:hills": "Jungle Hills",
+
+  "wetland:none": "Evergreen Wetlands",
+  "wetland:marsh": "Evergreen Wetlands",
+  "wetland:light_forest": "Evergreen Wetlands",
+  "wetland:heavy_forest": "Evergreen Wetlands",
+
+  "desert:none": "Sandy Desert",
+  "desert:dunes": "Sandy Desert",
+  "desert:hills": "Rocky Desert",
+  "desert:cactus_scrub": "Cactus Scrub",
+  "desert:lone_mountain": "Lone Mountain",
+
+  "rocky_desert:none": "Rocky Desert",
+  "rocky_desert:hills": "Rocky Desert",
+  "rocky_desert:cliffs": "Rocky Desert",
+  "rocky_desert:lone_mountain": "Lone Mountain",
+
+  "badlands:none": "Badlands",
+  "badlands:hills": "Badlands",
+  "badlands:cliffs": "Badlands",
+
+  "deep_badlands:none": "Deep Badlands",
+  "deep_badlands:hills": "Deep Badlands",
+  "deep_badlands:cliffs": "Deep Badlands",
+
+  "broken_lands:none": "Broken Lands",
+  "broken_lands:cliffs": "Broken Lands",
+  "broken_lands:lone_mountain": "Broken Lands",
+
+  "snow:none": "Snowfield",
+  "snow:hills": "Snowy Hills",
+  "snow:mountains": "Snowcapped Mountains",
+  "snow:snowcap": "Snowfield",
+  "snow:light_forest": "Snowy Forest",
+
+  "rock:none": "Rock",
+  "rock:hills": "Hills",
+  "rock:mountains": "Mountains",
+  "rock:forested_mountains": "Forested Mountains",
+  "rock:snowcap": "Snowcapped Mountains",
+  "rock:lone_mountain": "Lone Mountain",
+
+  "ashland:none": "Ashland",
+  "ashland:volcano": "Volcano",
+  "ashland:lone_mountain": "Lone Mountain"
+};
+
+const LEGACY_TERRAIN_TO_COMBO = {
+  "Deep Sea": ["deep_sea", "none"],
+  "Ocean": ["deep_sea", "none"],
+  "Sea": ["sea", "none"],
+  "Inland Waters": ["inland_water", "none"],
+  "Inland Water": ["inland_water", "none"],
+  "Beach": ["beach", "none"],
+
+  "Plains": ["plains", "none"],
+  "Grassland": ["grassland", "none"],
+  "Cultivated Farmland": ["grassland", "farmland"],
+
+  "Light Forest": ["grassland", "light_forest"],
+  "Heavy Forest": ["grassland", "heavy_forest"],
+  "Jungle": ["jungle_floor", "jungle"],
+  "Evergreen Wetlands": ["wetland", "light_forest"],
+
+  "Hills": ["plains", "hills"],
+  "Grassy Hills": ["grassland", "hills"],
+  "Shrubland Hills": ["grassland", "hills"],
+  "Forested Hills": ["grassland", "forested_hills"],
+
+  "Mountains": ["rock", "mountains"],
+  "Forested Mountains": ["rock", "forested_mountains"],
+  "Snowcapped Mountains": ["rock", "snowcap"],
+
+  "Sandy Desert": ["desert", "none"],
+  "Rocky Desert": ["rocky_desert", "hills"],
+  "Coastal Desert": ["desert", "dunes"],
+
+  "Badlands": ["badlands", "none"],
+  "Full Badlands": ["deep_badlands", "none"],
+  "Deep Badlands": ["deep_badlands", "none"],
+  "Broken Lands": ["broken_lands", "none"],
+
+  "Cactus": ["desert", "cactus_scrub"],
+  "Cactus Scrub": ["desert", "cactus_scrub"],
+  "Dormant Volcano": ["rock", "lone_mountain"],
+  "Lone Mountain": ["rock", "lone_mountain"],
+  "Volcano": ["ashland", "volcano"],
+  "Snow": ["snow", "none"],
+  "Snowfield": ["snow", "none"]
+};
+
+function getValidFeaturesForBase(baseId) {
+  return VALID_FEATURES_BY_BASE[baseId] || ["none"];
+}
+
+function isFeatureValidForBase(baseId, featureId) {
+  return getValidFeaturesForBase(baseId).includes(featureId);
+}
+
+function getTerrainDisplayName(baseId, featureId) {
+  const key = `${baseId}:${featureId || "none"}`;
+  if (TERRAIN_COMBO_NAMES[key]) return TERRAIN_COMBO_NAMES[key];
+
+  const base = baseTerrainById[baseId]?.label || baseId || "Unknown";
+  const feature = featureById[featureId]?.label || "";
+  return feature && featureId !== "none" ? `${base} + ${feature}` : base;
+}
+
+function legacyTerrainToCombo(value) {
+  const raw = String(value || "").trim();
+  const exact = LEGACY_TERRAIN_TO_COMBO[raw];
+  if (exact) return { baseTerrain: exact[0], terrainFeature: exact[1] };
+
+  const normalizedId = normalizeTerrainName(raw);
+  const terrain = terrainById[normalizedId]?.label || raw;
+  const fallback = LEGACY_TERRAIN_TO_COMBO[terrain] || ["plains", "none"];
+  return { baseTerrain: fallback[0], terrainFeature: fallback[1] };
+}
+
+function ensureValidCombo(baseTerrain, terrainFeature) {
+  const base = baseTerrainById[baseTerrain] ? baseTerrain : "plains";
+  const feature = isFeatureValidForBase(base, terrainFeature) ? terrainFeature : getValidFeaturesForBase(base)[0];
+  return { baseTerrain: base, terrainFeature: feature || "none" };
+}
+
+function hydrateHexTerrainFields(hex) {
+  if (!hex.baseTerrain || !hex.terrainFeature) {
+    const combo = legacyTerrainToCombo(hex.terrain);
+    hex.baseTerrain = combo.baseTerrain;
+    hex.terrainFeature = combo.terrainFeature;
+  }
+
+  const valid = ensureValidCombo(hex.baseTerrain, hex.terrainFeature);
+  hex.baseTerrain = valid.baseTerrain;
+  hex.terrainFeature = valid.terrainFeature;
+  hex.terrain = getTerrainDisplayName(hex.baseTerrain, hex.terrainFeature);
+  return hex;
+}
+
+const POI_TYPES = [
+  { id: "settlement", label: "Settlement", glyph: "●" },
+  { id: "city", label: "City", glyph: "◎" },
+  { id: "castle", label: "Castle", glyph: "♜" },
+  { id: "ruins", label: "Ruins", glyph: "✦" },
+  { id: "dungeon", label: "Dungeon", glyph: "◆" },
+  { id: "lair", label: "Lair", glyph: "▲" },
+  { id: "camp", label: "Camp", glyph: "♢" }
+];
+
+const terrainById = Object.fromEntries(TERRAIN.map(t => [t.id, t]));
+const terrainAliasToId = {};
+TERRAIN.forEach(t => {
+  terrainAliasToId[t.id.toLowerCase()] = t.id;
+  terrainAliasToId[t.label.toLowerCase()] = t.id;
+  (t.aliases || []).forEach(alias => terrainAliasToId[String(alias).trim().toLowerCase()] = t.id);
+});
+const poiTypeById = Object.fromEntries(POI_TYPES.map(p => [p.id, p]));
+
+let state = {
+  tool: "terrain",
+  selectedTerrain: "plains",
+  selectedBaseTerrain: "plains",
+  selectedTerrainFeature: "none",
+  selectedHexId: null,
+  lastRoadHexId: null,
+  lastRiverHexId: null,
+  hoverEdge: null,
+  isPointerDown: false,
+  paintedThisDrag: new Set(),
+  hexes: {},
+  pois: [],
+  regionBorders: [],
+  roads: [],
+  rivers: [],
+  showTerrainLabels: true,
+  showCoordLabels: true,
+  showEdgeBlend: true
+};
+
+let viewState = {
+  zoom: 1,
+  minZoom: 0.35,
+  maxZoom: 3,
+  panX: 0,
+  panY: 0,
+  baseWidth: 1,
+  baseHeight: 1,
+  isPanning: false,
+  lastPanClientX: 0,
+  lastPanClientY: 0
+};
+
+const svg = document.getElementById("map");
+const mapWrap = document.getElementById("map-wrap");
+
+function localHexId(col, row) {
+  return `${col}:${row}`;
+}
+
+function worldHexId(col, row) {
+  return `${WORLD_ORIGIN_X + col}:${WORLD_ORIGIN_Y + row}`;
+}
+
+function worldToLocalId(sourceHexId) {
+  const parsed = parseHexId(sourceHexId);
+  if (!parsed) return null;
+  return localHexId(parsed.x - WORLD_ORIGIN_X, parsed.y - WORLD_ORIGIN_Y);
+}
+
+function parseHexId(value) {
+  const match = String(value || "").trim().match(/^(-?\d+)\s*:\s*(-?\d+)$/);
+  if (!match) return null;
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+function normalizeTerrainName(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return terrainAliasToId[key] || "plains";
+}
+
+function seededTerrain(col, row) {
+  if (row < 2) return col < 3 ? "deep_sea" : "sea";
+  if (row === 2 && col < 5) return "beach";
+  if (col > 8 && row > 6) return "mountains";
+  if ((col + row) % 11 === 0) return "light_forest";
+  if ((col * 2 + row) % 13 === 0) return "hills";
+  if ((col + row * 3) % 17 === 0) return "grassland";
+  return "plains";
+}
+
+function initHexes(cols = GRID_COLS, rows = GRID_ROWS, seeded = true) {
+  GRID_COLS = cols;
+  GRID_ROWS = rows;
+  state.hexes = {};
+  state.pois = [];
+  state.regionBorders = [];
+  state.roads = [];
+  state.rivers = [];
+  state.selectedHexId = null;
+  state.lastRoadHexId = null;
+  state.lastRiverHexId = null;
+
+  if (cols * rows > 400) {
+    state.showTerrainLabels = false;
+    state.showCoordLabels = false;
+    updateLabelToggleText();
+  } else {
+    state.showTerrainLabels = true;
+    state.showCoordLabels = true;
+    updateLabelToggleText();
+  }
+
+  for (let col = 0; col < GRID_COLS; col++) {
+    for (let row = 0; row < GRID_ROWS; row++) {
+      const id = localHexId(col, row);
+      const legacyTerrain = seeded ? seededTerrain(col, row) : "plains";
+      const combo = legacyTerrainToCombo(legacyTerrain);
+      state.hexes[id] = hydrateHexTerrainFields({
+        id,
+        worldId: worldHexId(col, row),
+        col,
+        row,
+        terrain: legacyTerrain,
+        baseTerrain: combo.baseTerrain,
+        terrainFeature: combo.terrainFeature,
+        regionId: ""
+      });
+    }
+  }
+
+  render();
+}
+
+function centerOf(col, row) {
+  return {
+    x: HEX_RADIUS + 20 + col * COL_STEP,
+    y: HEX_RADIUS + 20 + row * ROW_STEP + (col % 2 ? ROW_STEP / 2 : 0)
+  };
+}
+
+function hexPoints(cx, cy) {
+  const points = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i);
+    points.push({
+      x: cx + HEX_RADIUS * Math.cos(angle),
+      y: cy + HEX_RADIUS * Math.sin(angle)
+    });
+  }
+  return points;
+}
+
+function pointsString(points) {
+  return points.map(p => `${p.x},${p.y}`).join(" ");
+}
+
+function edgeSegment(col, row, edgeName) {
+  const center = centerOf(col, row);
+  const pts = hexPoints(center.x, center.y);
+  const i = EDGE_NAMES.indexOf(edgeName);
+  return { a: pts[i], b: pts[(i + 1) % 6] };
+}
+
+const EVEN_Q_NEIGHBORS = {
+  E: [1, 0],
+  SE: [0, 1],
+  SW: [-1, 1],
+  W: [-1, 0],
+  NW: [-1, -1],
+  NE: [0, -1]
+};
+
+const ODD_Q_NEIGHBORS = {
+  E: [1, 0],
+  SE: [1, 1],
+  SW: [0, 1],
+  W: [-1, 0],
+  NW: [0, -1],
+  NE: [1, -1]
+};
+
+function getNeighborHex(hex, edgeName) {
+  const offsets = hex.col % 2 ? ODD_Q_NEIGHBORS : EVEN_Q_NEIGHBORS;
+  const offset = offsets[edgeName];
+  if (!offset) return null;
+  return state.hexes[localHexId(hex.col + offset[0], hex.row + offset[1])] || null;
+}
+
+function inwardPoint(point, center, amount = 0.28) {
+  return {
+    x: point.x + (center.x - point.x) * amount,
+    y: point.y + (center.y - point.y) * amount
+  };
+}
+
+function edgeBlendPolygon(hex, edgeName) {
+  const center = centerOf(hex.col, hex.row);
+  const pts = hexPoints(center.x, center.y);
+  const index = EDGE_NAMES.indexOf(edgeName);
+  const a = pts[index];
+  const b = pts[(index + 1) % 6];
+  const ai = inwardPoint(a, center, 0.34);
+  const bi = inwardPoint(b, center, 0.34);
+  return [a, b, bi, ai];
+}
+
+function shouldBlendEdge(hex, neighbor) {
+  if (!neighbor) return false;
+  hydrateHexTerrainFields(hex);
+  hydrateHexTerrainFields(neighbor);
+  return hex.baseTerrain !== neighbor.baseTerrain;
+}
+
+function renderEdgeBlendForHex(hex) {
+  if (!state.showEdgeBlend) return;
+
+  EDGE_NAMES.forEach(edgeName => {
+    const neighbor = getNeighborHex(hex, edgeName);
+    if (!shouldBlendEdge(hex, neighbor)) return;
+
+    const neighborBase = baseTerrainById[neighbor.baseTerrain] || baseTerrainById.plains;
+    const poly = svgElement("polygon", {
+      points: pointsString(edgeBlendPolygon(hex, edgeName)),
+      fill: neighborBase.color,
+      opacity: "0.28",
+      class: "edge-blend"
+    });
+    svg.appendChild(poly);
+  });
+}
+
+function nearestEdgeFromMouse(event, hex) {
+  const pt = svg.createSVGPoint();
+  pt.x = event.clientX;
+  pt.y = event.clientY;
+  const cursor = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const center = centerOf(hex.col, hex.row);
+  let deg = Math.atan2(cursor.y - center.y, cursor.x - center.x) * 180 / Math.PI;
+  if (deg < 0) deg += 360;
+  const edgeIndex = Math.round(deg / 60) % 6;
+  return EDGE_NAMES[edgeIndex];
+}
+
+function clampView() {
+  const visibleWidth = mapWrap.clientWidth / viewState.zoom;
+  const visibleHeight = mapWrap.clientHeight / viewState.zoom;
+
+  const maxPanX = Math.max(0, viewState.baseWidth - visibleWidth);
+  const maxPanY = Math.max(0, viewState.baseHeight - visibleHeight);
+
+  viewState.panX = Math.max(0, Math.min(maxPanX, viewState.panX));
+  viewState.panY = Math.max(0, Math.min(maxPanY, viewState.panY));
+}
+
+function applyViewBox() {
+  clampView();
+
+  const visibleWidth = mapWrap.clientWidth / viewState.zoom;
+  const visibleHeight = mapWrap.clientHeight / viewState.zoom;
+
+  svg.setAttribute(
+    "viewBox",
+    `${viewState.panX} ${viewState.panY} ${visibleWidth} ${visibleHeight}`
+  );
+}
+
+function setZoom(nextZoom, anchorClientX = null, anchorClientY = null) {
+  const oldZoom = viewState.zoom;
+  const clamped = Math.max(viewState.minZoom, Math.min(viewState.maxZoom, nextZoom));
+  if (Math.abs(clamped - oldZoom) < 0.0001) return;
+
+  const rect = mapWrap.getBoundingClientRect();
+  const anchorScreenX = anchorClientX === null ? rect.left + rect.width / 2 : anchorClientX;
+  const anchorScreenY = anchorClientY === null ? rect.top + rect.height / 2 : anchorClientY;
+
+  const relativeX = anchorScreenX - rect.left;
+  const relativeY = anchorScreenY - rect.top;
+
+  const anchorWorldX = viewState.panX + relativeX / oldZoom;
+  const anchorWorldY = viewState.panY + relativeY / oldZoom;
+
+  viewState.zoom = clamped;
+  viewState.panX = anchorWorldX - relativeX / clamped;
+  viewState.panY = anchorWorldY - relativeY / clamped;
+
+  applyViewBox();
+}
+
+function zoomByFactor(factor, clientX = null, clientY = null) {
+  setZoom(viewState.zoom * factor, clientX, clientY);
+}
+
+function resetZoom() {
+  viewState.zoom = 1;
+  viewState.panX = 0;
+  viewState.panY = 0;
+  applyViewBox();
+}
+
+function panByScreenDelta(deltaClientX, deltaClientY) {
+  viewState.panX -= deltaClientX / viewState.zoom;
+  viewState.panY -= deltaClientY / viewState.zoom;
+  applyViewBox();
+}
+
+
+function stopPaintingDrag() {
+  state.isPointerDown = false;
+  state.paintedThisDrag = new Set();
+}
+
+function isLeftButtonStillDown(event) {
+  return (event.buttons & 1) === 1;
+}
+
+function setTool(tool) {
+  if (state.tool === tool && (tool === "road" || tool === "river")) {
+    state.lastRoadHexId = null;
+    state.lastRiverHexId = null;
+  }
+
+  if (tool !== "road") state.lastRoadHexId = null;
+  if (tool !== "river") state.lastRiverHexId = null;
+
+  state.tool = tool;
+  state.paintedThisDrag = new Set();
+
+  document.querySelectorAll(".tool-button").forEach(button => {
+    button.classList.toggle("active", button.dataset.tool === tool);
+  });
+
+  render();
+}
+
+function paintTerrain(id) {
+  if (!state.hexes[id]) return;
+  const combo = ensureValidCombo(state.selectedBaseTerrain, state.selectedTerrainFeature);
+  state.hexes[id].baseTerrain = combo.baseTerrain;
+  state.hexes[id].terrainFeature = combo.terrainFeature;
+  state.hexes[id].terrain = getTerrainDisplayName(combo.baseTerrain, combo.terrainFeature);
+  state.selectedHexId = id;
+}
+
+function placePoi(id) {
+  const poiType = document.getElementById("poi-type").value;
+  const count = state.pois.length + 1;
+
+  state.pois.push({
+    id: `poi_${count}`,
+    name: `${poiTypeById[poiType].label} ${count}`,
+    type: poiType,
+    hexId: id,
+    worldHexId: state.hexes[id].worldId
+  });
+
+  state.selectedHexId = id;
+}
+
+function toggleRegionBorder(id, edge) {
+  const color = document.getElementById("region-color").value;
+  const regionName = document.getElementById("region-name").value.trim() || "Unnamed Region";
+  const key = `${id}:${edge}`;
+
+  const existing = state.regionBorders.findIndex(border => border.key === key);
+
+  if (existing >= 0) {
+    state.regionBorders.splice(existing, 1);
+  } else {
+    state.regionBorders.push({
+      key,
+      hexId: id,
+      worldHexId: state.hexes[id].worldId,
+      edge,
+      regionName,
+      color
+    });
+  }
+
+  state.selectedHexId = id;
+}
+
+function segmentExists(collection, from, to) {
+  return collection.some(seg => (seg.from === from && seg.to === to) || (seg.from === to && seg.to === from));
+}
+
+function drawRoad(id) {
+  if (!state.lastRoadHexId) {
+    state.lastRoadHexId = id;
+    state.selectedHexId = id;
+    return;
+  }
+
+  if (state.lastRoadHexId !== id && !segmentExists(state.roads, state.lastRoadHexId, id)) {
+    state.roads.push({
+      id: `road_${state.roads.length + 1}`,
+      from: state.lastRoadHexId,
+      to: id,
+      fromWorld: state.hexes[state.lastRoadHexId].worldId,
+      toWorld: state.hexes[id].worldId
+    });
+  }
+
+  state.lastRoadHexId = null;
+  state.selectedHexId = id;
+}
+
+function drawRiver(id) {
+  if (!state.lastRiverHexId) {
+    state.lastRiverHexId = id;
+    state.selectedHexId = id;
+    return;
+  }
+
+  if (state.lastRiverHexId !== id && !segmentExists(state.rivers, state.lastRiverHexId, id)) {
+    state.rivers.push({
+      id: `river_${state.rivers.length + 1}`,
+      from: state.lastRiverHexId,
+      to: id,
+      fromWorld: state.hexes[state.lastRiverHexId].worldId,
+      toWorld: state.hexes[id].worldId
+    });
+  }
+
+  state.lastRiverHexId = null;
+  state.selectedHexId = id;
+}
+
+function eraseOverlay(id) {
+  state.pois = state.pois.filter(poi => poi.hexId !== id);
+  state.regionBorders = state.regionBorders.filter(border => border.hexId !== id);
+  state.roads = state.roads.filter(road => road.from !== id && road.to !== id);
+  state.rivers = state.rivers.filter(river => river.from !== id && river.to !== id);
+  state.selectedHexId = id;
+}
+
+function applyToolToHex(event, id, fromDrag = false) {
+  const hex = state.hexes[id];
+  if (!hex) return;
+
+  const dragKey = `${state.tool}:${id}`;
+  if (fromDrag && state.paintedThisDrag.has(dragKey) && ["terrain", "poi", "erase"].includes(state.tool)) return;
+  state.paintedThisDrag.add(dragKey);
+
+  if (state.tool === "terrain") paintTerrain(id);
+  else if (state.tool === "poi" && !fromDrag) placePoi(id);
+  else if (state.tool === "region-border") toggleRegionBorder(id, nearestEdgeFromMouse(event, hex));
+  else if (state.tool === "road") drawRoad(id);
+  else if (state.tool === "river") drawRiver(id);
+  else if (state.tool === "erase") eraseOverlay(id);
+  else state.selectedHexId = id;
+}
+
+function segmentPath(segment) {
+  const from = state.hexes[segment.from];
+  const to = state.hexes[segment.to];
+  if (!from || !to) return "";
+  const a = centerOf(from.col, from.row);
+  const b = centerOf(to.col, to.row);
+  return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+}
+
+function renderTerrainControls() {
+  const baseContainer = document.getElementById("base-terrain-list");
+  const featureSelect = document.getElementById("terrain-feature-select");
+  if (!baseContainer || !featureSelect) return;
+
+  baseContainer.innerHTML = "";
+
+  BASE_TERRAINS.forEach(base => {
+    const button = document.createElement("button");
+    button.className = "terrain-button";
+    button.classList.toggle("active", base.id === state.selectedBaseTerrain);
+    button.innerHTML = `
+      <span class="swatch" style="background:${base.color}"></span>
+      <span>${base.label}</span>
+    `;
+    button.addEventListener("click", () => {
+      state.selectedBaseTerrain = base.id;
+      if (!isFeatureValidForBase(state.selectedBaseTerrain, state.selectedTerrainFeature)) {
+        state.selectedTerrainFeature = getValidFeaturesForBase(state.selectedBaseTerrain)[0] || "none";
+      }
+      renderTerrainControls();
+    });
+    baseContainer.appendChild(button);
+  });
+
+  const validFeatures = getValidFeaturesForBase(state.selectedBaseTerrain);
+  featureSelect.innerHTML = "";
+
+  validFeatures.forEach(featureId => {
+    const feature = featureById[featureId] || featureById.none;
+    const option = document.createElement("option");
+    option.value = feature.id;
+    option.textContent = `${feature.glyph ? feature.glyph + " " : ""}${feature.label}`;
+    featureSelect.appendChild(option);
+  });
+
+  if (!validFeatures.includes(state.selectedTerrainFeature)) {
+    state.selectedTerrainFeature = validFeatures[0] || "none";
+  }
+
+  featureSelect.value = state.selectedTerrainFeature;
+  featureSelect.onchange = () => {
+    state.selectedTerrainFeature = featureSelect.value;
+    renderTerrainControls();
+  };
+}
+
+
+function renderPoiControls() {
+  const select = document.getElementById("poi-type");
+  select.innerHTML = "";
+
+  POI_TYPES.forEach(type => {
+    const option = document.createElement("option");
+    option.value = type.id;
+    option.textContent = `${type.glyph} ${type.label}`;
+    select.appendChild(option);
+  });
+}
+
+function svgElement(name, attrs = {}) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  return el;
+}
+
+function updateHoverEdgeElement(hexId, edge) {
+  let line = document.getElementById("hover-edge-line");
+  if (!line) {
+    line = svgElement("line", { id: "hover-edge-line", class: "hover-edge" });
+    svg.appendChild(line);
+  }
+
+  if (!hexId || !edge || state.tool !== "region-border") {
+    line.setAttribute("display", "none");
+    return;
+  }
+
+  const hex = state.hexes[hexId];
+  if (!hex) {
+    line.setAttribute("display", "none");
+    return;
+  }
+
+  const seg = edgeSegment(hex.col, hex.row, edge);
+  line.setAttribute("x1", seg.a.x);
+  line.setAttribute("y1", seg.a.y);
+  line.setAttribute("x2", seg.b.x);
+  line.setAttribute("y2", seg.b.y);
+  line.setAttribute("display", "block");
+}
+
+function updateLabelToggleText() {
+  const terrainButton = document.getElementById("terrain-label-toggle");
+  const coordButton = document.getElementById("coord-label-toggle");
+  const edgeButton = document.getElementById("edge-blend-toggle");
+  if (terrainButton) terrainButton.textContent = `Terrain Labels: ${state.showTerrainLabels ? "On" : "Off"}`;
+  if (coordButton) coordButton.textContent = `Coords: ${state.showCoordLabels ? "On" : "Off"}`;
+  if (edgeButton) edgeButton.textContent = `Edge Bleed: ${state.showEdgeBlend ? "On" : "Off"}`;
+}
+
+function render() {
+  const last = centerOf(GRID_COLS - 1, GRID_ROWS - 1);
+  const baseWidth = last.x + HEX_WIDTH + 40;
+  const baseHeight = last.y + HEX_HEIGHT + 40;
+  viewState.baseWidth = baseWidth;
+  viewState.baseHeight = baseHeight;
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  applyViewBox();
+  svg.innerHTML = "";
+
+  Object.values(state.hexes).forEach(hex => {
+    const center = centerOf(hex.col, hex.row);
+    hydrateHexTerrainFields(hex);
+    const baseTerrain = baseTerrainById[hex.baseTerrain] || baseTerrainById.plains;
+    const feature = featureById[hex.terrainFeature] || featureById.none;
+    const terrainLabelText = getTerrainDisplayName(hex.baseTerrain, hex.terrainFeature);
+
+    const polygon = svgElement("polygon", {
+      points: pointsString(hexPoints(center.x, center.y)),
+      fill: baseTerrain.color,
+      stroke: "rgba(255,255,255,0.25)",
+      "stroke-width": "1",
+      class: "hex",
+      "data-hex-id": hex.id
+    });
+
+    polygon.addEventListener("pointerdown", event => {
+      if (state.tool === "pan" || event.shiftKey || event.button === 1 || event.button === 2) return;
+      if (event.button !== 0) return;
+
+      event.preventDefault();
+      state.isPointerDown = true;
+      state.paintedThisDrag = new Set();
+
+      applyToolToHex(event, hex.id, false);
+      render();
+    });
+
+    polygon.addEventListener("pointerup", event => {
+      stopPaintingDrag();
+    });
+
+    polygon.addEventListener("pointercancel", event => {
+      stopPaintingDrag();
+    });
+
+    polygon.addEventListener("pointerenter", event => {
+      if (viewState.isPanning || state.tool === "pan") return;
+
+      if (state.isPointerDown && !isLeftButtonStillDown(event)) {
+        stopPaintingDrag();
+        return;
+      }
+
+      if (state.isPointerDown && ["terrain", "erase"].includes(state.tool)) {
+        applyToolToHex(event, hex.id, true);
+        render();
+      }
+    });
+
+    polygon.addEventListener("pointermove", event => {
+      if (state.isPointerDown && !isLeftButtonStillDown(event)) {
+        stopPaintingDrag();
+        return;
+      }
+
+      if (state.tool === "region-border") {
+        const edge = nearestEdgeFromMouse(event, hex);
+        state.hoverEdge = { hexId: hex.id, edge };
+        updateHoverEdgeElement(hex.id, edge);
+      }
+    });
+
+    polygon.addEventListener("pointerleave", () => {
+      if (!state.isPointerDown) {
+        state.hoverEdge = null;
+        updateHoverEdgeElement(null, null);
+      }
+    });
+
+    svg.appendChild(polygon);
+
+    renderEdgeBlendForHex(hex);
+
+    if (state.showTerrainLabels) {
+      const terrainLabel = svgElement("text", { x: center.x, y: center.y - 5, class: "hex-label" });
+      terrainLabel.textContent = terrainLabelText;
+      svg.appendChild(terrainLabel);
+    }
+
+    if (state.showCoordLabels) {
+      const coordLabel = svgElement("text", { x: center.x, y: center.y + 9, class: "coord-label" });
+      coordLabel.textContent = hex.worldId;
+      svg.appendChild(coordLabel);
+    }
+
+    if (feature.glyph) {
+      const featureGlyph = svgElement("text", {
+        x: center.x,
+        y: center.y + (state.showTerrainLabels ? 18 : 5),
+        class: "hex-label"
+      });
+      featureGlyph.setAttribute("font-size", feature.glyph.length > 1 ? "13" : "20");
+      featureGlyph.textContent = feature.glyph;
+      svg.appendChild(featureGlyph);
+    }
+  });
+
+  state.roads.forEach(road => {
+    const path = svgElement("path", { d: segmentPath(road), class: "road" });
+    svg.appendChild(path);
+  });
+
+  state.rivers.forEach(river => {
+    const path = svgElement("path", { d: segmentPath(river), class: "river" });
+    svg.appendChild(path);
+  });
+
+  state.regionBorders.forEach(border => {
+    const hex = state.hexes[border.hexId];
+    if (!hex) return;
+    const seg = edgeSegment(hex.col, hex.row, border.edge);
+    const line = svgElement("line", {
+      x1: seg.a.x, y1: seg.a.y, x2: seg.b.x, y2: seg.b.y,
+      stroke: border.color,
+      "stroke-width": "6",
+      class: "region-border"
+    });
+    svg.appendChild(line);
+  });
+
+  updateHoverEdgeElement(state.hoverEdge?.hexId, state.hoverEdge?.edge);
+
+  state.pois.forEach(poi => {
+    const hex = state.hexes[poi.hexId];
+    if (!hex) return;
+    const center = centerOf(hex.col, hex.row);
+    const type = poiTypeById[poi.type] || poiTypeById.settlement;
+    const group = svgElement("g", { class: "poi-marker" });
+    const circle = svgElement("circle", { cx: center.x, cy: center.y - 22, r: 14, class: "poi-bg" });
+    const text = svgElement("text", { x: center.x, y: center.y - 21, class: "poi-symbol" });
+    text.textContent = type.glyph;
+    group.appendChild(circle);
+    group.appendChild(text);
+    svg.appendChild(group);
+  });
+
+  const pendingId = state.tool === "road" ? state.lastRoadHexId : state.tool === "river" ? state.lastRiverHexId : null;
+  if (pendingId && state.hexes[pendingId]) {
+    const hex = state.hexes[pendingId];
+    const center = centerOf(hex.col, hex.row);
+    const pendingOutline = svgElement("polygon", {
+      points: pointsString(hexPoints(center.x, center.y)),
+      class: "pending-path-outline"
+    });
+    svg.appendChild(pendingOutline);
+  }
+
+  if (state.selectedHexId && state.hexes[state.selectedHexId]) {
+    const hex = state.hexes[state.selectedHexId];
+    const center = centerOf(hex.col, hex.row);
+    const outline = svgElement("polygon", {
+      points: pointsString(hexPoints(center.x, center.y)),
+      class: "selected-outline"
+    });
+    svg.appendChild(outline);
+  }
+
+  renderInspector();
+}
+
+function renderInspector() {
+  const selectedInfo = document.getElementById("selected-info");
+  const summary = document.getElementById("summary");
+
+  if (!state.selectedHexId || !state.hexes[state.selectedHexId]) {
+    selectedInfo.textContent = "Click a hex.";
+  } else {
+    const hex = state.hexes[state.selectedHexId];
+    hydrateHexTerrainFields(hex);
+    const baseTerrain = baseTerrainById[hex.baseTerrain] || baseTerrainById.plains;
+    const feature = featureById[hex.terrainFeature] || featureById.none;
+    const terrainLabelText = getTerrainDisplayName(hex.baseTerrain, hex.terrainFeature);
+    const hexPois = state.pois.filter(poi => poi.hexId === hex.id);
+    const hexBorders = state.regionBorders.filter(border => border.hexId === hex.id);
+    const hexRoads = state.roads.filter(road => road.from === hex.id || road.to === hex.id);
+    const hexRivers = state.rivers.filter(river => river.from === hex.id || river.to === hex.id);
+
+    selectedInfo.innerHTML = `
+      <strong>Local Hex ${hex.id}</strong><br>
+      World Hex / future X:Y: ${hex.worldId}<br>
+      ${hex.sourceHexId ? `Source CSV Hex_ID: ${hex.sourceHexId}<br>` : ""}
+      Terrain: ${terrainLabelText}<br>
+      Base: ${baseTerrainById[hex.baseTerrain]?.label || hex.baseTerrain}<br>
+      Feature: ${featureById[hex.terrainFeature]?.label || hex.terrainFeature}<br>
+      Region: ${hex.regionId || "None"}<br>
+      POIs: ${hexPois.length ? hexPois.map(p => p.name).join(", ") : "None"}<br>
+      Border segments: ${hexBorders.length}<br>
+      Roads: ${hexRoads.length}<br>
+      Rivers: ${hexRivers.length}<br>
+      ${state.lastRoadHexId ? `Road start armed: ${state.hexes[state.lastRoadHexId]?.worldId || state.lastRoadHexId}<br>` : ""}
+      ${state.lastRiverHexId ? `River start armed: ${state.hexes[state.lastRiverHexId]?.worldId || state.lastRiverHexId}<br>` : ""}
+    `;
+  }
+
+  summary.innerHTML = `
+    Hexes: ${Object.keys(state.hexes).length}<br>
+    POIs: ${state.pois.length}<br>
+    Region borders: ${state.regionBorders.length}<br>
+    Roads: ${state.roads.length}<br>
+    Rivers: ${state.rivers.length}<br>
+    Grid: ${GRID_COLS} × ${GRID_ROWS}<br>
+    World origin: ${WORLD_ORIGIN_X}:${WORLD_ORIGIN_Y}<br>
+    Hex radius: ${HEX_RADIUS}px<br>
+    Terrain labels: ${state.showTerrainLabels ? "on" : "off"}<br>
+    Coordinate labels: ${state.showCoordLabels ? "on" : "off"}<br>
+    Active terrain brush: ${getTerrainDisplayName(state.selectedBaseTerrain, state.selectedTerrainFeature)}<br>
+    Edge bleed: ${state.showEdgeBlend ? "on" : "off"}
+  `;
+}
+
+function exportDataObject() {
+  return {
+    version: 2,
+    grid: {
+      cols: GRID_COLS,
+      rows: GRID_ROWS,
+      orientation: "flat-top",
+      offset: "odd-column",
+      hexRadius: HEX_RADIUS,
+      worldOrigin: { x: WORLD_ORIGIN_X, y: WORLD_ORIGIN_Y },
+      coordinateConvention: "X:Y / column:row",
+      importedCsvCoordinateOrder: getCsvCoordinateOrder(),
+      terrainModel: "baseTerrain + terrainFeature",
+      visualEdgeBleed: state.showEdgeBlend
+    },
+    hexes: Object.values(state.hexes).map(hex => hydrateHexTerrainFields({ ...hex })),
+    pois: state.pois,
+    regionBorders: state.regionBorders,
+    roads: state.roads,
+    rivers: state.rivers
+  };
+}
+
+function downloadJson() {
+  const data = JSON.stringify(exportDataObject(), null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "kadesh-hex-editor-prototype-v2.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyJson() {
+  const data = JSON.stringify(exportDataObject(), null, 2);
+  await navigator.clipboard.writeText(data);
+  alert("Prototype JSON copied.");
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let value = "";
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && insideQuotes && next === '"') {
+      value += '"';
+      i++;
+    } else if (char === '"') {
+      insideQuotes = !insideQuotes;
+    } else if (char === "," && !insideQuotes) {
+      row.push(value.trim());
+      value = "";
+    } else if ((char === "\n" || char === "\r") && !insideQuotes) {
+      if (value || row.length) {
+        row.push(value.trim());
+        rows.push(row);
+        row = [];
+        value = "";
+      }
+      if (char === "\r" && next === "\n") i++;
+    } else {
+      value += char;
+    }
+  }
+
+  if (value || row.length) {
+    row.push(value.trim());
+    rows.push(row);
+  }
+
+  const headers = rows.shift() || [];
+  return rows
+    .filter(r => r.some(cell => cell !== ""))
+    .map(r => {
+      const obj = {};
+      headers.forEach((header, index) => obj[header] = r[index] || "");
+      return obj;
+    });
+}
+
+function getCsvCoordinateOrder() {
+  return document.getElementById("csv-coordinate-order")?.value || "xy";
+}
+
+function sourceHexToCanonicalWorld(sourceHexId, order) {
+  const parsed = parseHexId(sourceHexId);
+  if (!parsed) return null;
+
+  if (order === "yx") {
+    return {
+      x: parsed.y,
+      y: parsed.x,
+      sourceX: parsed.x,
+      sourceY: parsed.y,
+      sourceHexId: `${parsed.x}:${parsed.y}`
+    };
+  }
+
+  return {
+    x: parsed.x,
+    y: parsed.y,
+    sourceX: parsed.x,
+    sourceY: parsed.y,
+    sourceHexId: `${parsed.x}:${parsed.y}`
+  };
+}
+
+function importKadeshHexCsvText(text) {
+  const rows = parseCSV(text);
+  const coordinateOrder = getCsvCoordinateOrder();
+
+  const parsedRows = rows
+    .map(row => {
+      const sourceHexId = row.Hex_ID || row.hex_id || row.id;
+      return { row, canonical: sourceHexToCanonicalWorld(sourceHexId, coordinateOrder) };
+    })
+    .filter(item => item.canonical);
+
+  if (!parsedRows.length) {
+    alert("No valid Hex_ID values found.");
+    return;
+  }
+
+  const minX = Math.min(...parsedRows.map(item => item.canonical.x));
+  const minY = Math.min(...parsedRows.map(item => item.canonical.y));
+  const maxX = Math.max(...parsedRows.map(item => item.canonical.x));
+  const maxY = Math.max(...parsedRows.map(item => item.canonical.y));
+
+  WORLD_ORIGIN_X = minX;
+  WORLD_ORIGIN_Y = minY;
+  GRID_COLS = maxX - minX + 1;
+  GRID_ROWS = maxY - minY + 1;
+
+  state.hexes = {};
+  state.pois = [];
+  state.regionBorders = [];
+  state.roads = [];
+  state.rivers = [];
+  state.selectedHexId = null;
+
+  if (GRID_COLS * GRID_ROWS > 400) {
+    state.showTerrainLabels = false;
+    state.showCoordLabels = false;
+  }
+  updateLabelToggleText();
+
+  for (let col = 0; col < GRID_COLS; col++) {
+    for (let row = 0; row < GRID_ROWS; row++) {
+      const id = localHexId(col, row);
+      state.hexes[id] = hydrateHexTerrainFields({
+        id,
+        worldId: worldHexId(col, row),
+        sourceHexId: "",
+        col,
+        row,
+        terrain: "Plains",
+        baseTerrain: "plains",
+        terrainFeature: "none",
+        regionId: ""
+      });
+    }
+  }
+
+  parsedRows.forEach(({ row, canonical }) => {
+    const col = canonical.x - WORLD_ORIGIN_X;
+    const localRow = canonical.y - WORLD_ORIGIN_Y;
+    const id = localHexId(col, localRow);
+    if (!state.hexes[id]) return;
+
+    state.hexes[id].worldId = `${canonical.x}:${canonical.y}`;
+    state.hexes[id].sourceHexId = canonical.sourceHexId;
+    const combo = legacyTerrainToCombo(row.Terrain);
+    state.hexes[id].baseTerrain = combo.baseTerrain;
+    state.hexes[id].terrainFeature = combo.terrainFeature;
+    state.hexes[id].terrain = getTerrainDisplayName(combo.baseTerrain, combo.terrainFeature);
+    state.hexes[id].regionId = row.Region_ID_Ref || "";
+  });
+
+  render();
+
+  const modeLabel = coordinateOrder === "yx"
+    ? "legacy row:column imported and swapped to future X:Y"
+    : "future X:Y / column:row";
+
+  alert(`Imported ${parsedRows.length} hex rows into a ${GRID_COLS}×${GRID_ROWS} grid using ${modeLabel}.`);
+}
+
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+
+      if (data.grid?.worldOrigin) {
+        WORLD_ORIGIN_X = Number(data.grid.worldOrigin.x) || 300;
+        WORLD_ORIGIN_Y = Number(data.grid.worldOrigin.y) || 300;
+      }
+
+      if (Array.isArray(data.hexes)) {
+        GRID_COLS = Number(data.grid?.cols) || GRID_COLS;
+        GRID_ROWS = Number(data.grid?.rows) || GRID_ROWS;
+        state.hexes = Object.fromEntries(data.hexes.map(hex => {
+          const hydrated = hydrateHexTerrainFields(hex);
+          return [hydrated.id, hydrated];
+        }));
+      }
+
+      state.pois = Array.isArray(data.pois) ? data.pois : [];
+      state.regionBorders = Array.isArray(data.regionBorders) ? data.regionBorders : [];
+      state.roads = Array.isArray(data.roads) ? data.roads : [];
+      state.rivers = Array.isArray(data.rivers) ? data.rivers : [];
+      state.selectedHexId = null;
+      state.lastRoadHexId = null;
+      state.lastRiverHexId = null;
+
+      render();
+    } catch {
+      alert("Could not import JSON.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function importCsv(file) {
+  const reader = new FileReader();
+  reader.onload = () => importKadeshHexCsvText(String(reader.result || ""));
+  reader.readAsText(file);
+}
+
+window.addEventListener("pointerup", () => {
+  stopPaintingDrag();
+});
+
+window.addEventListener("pointercancel", () => {
+  stopPaintingDrag();
+});
+
+window.addEventListener("blur", () => {
+  stopPaintingDrag();
+});
+
+mapWrap.addEventListener("pointerleave", event => {
+  if (!isLeftButtonStillDown(event)) {
+    stopPaintingDrag();
+  }
+});
+
+mapWrap.addEventListener("wheel", event => {
+  event.preventDefault();
+  const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+  zoomByFactor(factor, event.clientX, event.clientY);
+}, { passive: false });
+
+mapWrap.addEventListener("pointerdown", event => {
+  const shouldPan =
+    state.tool === "pan" ||
+    event.shiftKey ||
+    event.button === 1 ||
+    event.button === 2;
+
+  if (!shouldPan) return;
+
+  event.preventDefault();
+  viewState.isPanning = true;
+  viewState.lastPanClientX = event.clientX;
+  viewState.lastPanClientY = event.clientY;
+  document.body.classList.add("panning");
+
+  try { mapWrap.setPointerCapture(event.pointerId); } catch {}
+});
+
+mapWrap.addEventListener("pointermove", event => {
+  if (!viewState.isPanning) return;
+  event.preventDefault();
+  const dx = event.clientX - viewState.lastPanClientX;
+  const dy = event.clientY - viewState.lastPanClientY;
+  viewState.lastPanClientX = event.clientX;
+  viewState.lastPanClientY = event.clientY;
+  panByScreenDelta(dx, dy);
+});
+
+mapWrap.addEventListener("pointerup", event => {
+  if (!viewState.isPanning) return;
+  viewState.isPanning = false;
+  document.body.classList.remove("panning");
+  try { mapWrap.releasePointerCapture(event.pointerId); } catch {}
+});
+
+mapWrap.addEventListener("pointercancel", () => {
+  viewState.isPanning = false;
+  document.body.classList.remove("panning");
+});
+
+mapWrap.addEventListener("contextmenu", event => {
+  event.preventDefault();
+});
+
+window.addEventListener("resize", applyViewBox);
+
+window.addEventListener("keydown", event => {
+  const target = event.target;
+  const tag = String(target?.tagName || "").toLowerCase();
+  if (["input", "select", "textarea"].includes(tag)) return;
+
+  const step = 80;
+  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    panByScreenDelta(step, 0);
+  } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
+    event.preventDefault();
+    panByScreenDelta(-step, 0);
+  } else if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") {
+    event.preventDefault();
+    panByScreenDelta(0, step);
+  } else if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    panByScreenDelta(0, -step);
+  } else if (event.key === "+" || event.key === "=") {
+    event.preventDefault();
+    zoomByFactor(1.15);
+  } else if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    zoomByFactor(1 / 1.15);
+  } else if (event.key === "0") {
+    event.preventDefault();
+    resetZoom();
+  }
+});
+
+document.getElementById("zoom-in-button").addEventListener("click", () => zoomByFactor(1.2));
+document.getElementById("zoom-out-button").addEventListener("click", () => zoomByFactor(1 / 1.2));
+document.getElementById("zoom-reset-button").addEventListener("click", resetZoom);
+
+document.getElementById("terrain-label-toggle").addEventListener("click", () => {
+  state.showTerrainLabels = !state.showTerrainLabels;
+  updateLabelToggleText();
+  render();
+});
+
+document.getElementById("coord-label-toggle").addEventListener("click", () => {
+  state.showCoordLabels = !state.showCoordLabels;
+  updateLabelToggleText();
+  render();
+});
+
+document.getElementById("edge-blend-toggle").addEventListener("click", () => {
+  state.showEdgeBlend = !state.showEdgeBlend;
+  updateLabelToggleText();
+  render();
+});
+
+document.querySelectorAll(".tool-button").forEach(button => {
+  button.addEventListener("click", () => setTool(button.dataset.tool));
+});
+
+document.getElementById("export-button").addEventListener("click", downloadJson);
+document.getElementById("copy-button").addEventListener("click", copyJson);
+
+document.getElementById("import-json-file").addEventListener("change", event => {
+  const file = event.target.files[0];
+  if (file) importJson(file);
+});
+
+document.getElementById("import-csv-file").addEventListener("change", event => {
+  const file = event.target.files[0];
+  if (file) importCsv(file);
+});
+
+document.getElementById("small-grid-button").addEventListener("click", () => {
+  WORLD_ORIGIN_X = 300;
+  WORLD_ORIGIN_Y = 300;
+  initHexes(12, 12, true);
+});
+
+document.getElementById("large-grid-button").addEventListener("click", () => {
+  WORLD_ORIGIN_X = 300;
+  WORLD_ORIGIN_Y = 300;
+  initHexes(50, 50, false);
+});
+
+initHexes(12, 12, true);
+renderTerrainControls();
+renderPoiControls();
+updateLabelToggleText();
+render();
+</script>
+</body>
+</html>
