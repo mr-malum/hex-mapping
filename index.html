@@ -1100,6 +1100,64 @@ function outsideCornerPatchCandidate(hex, leftEdgeIndex) {
   return candidates[0];
 }
 
+const EDGE_BLEED_MASK_DIRECTIONS = {
+  E:  { x1: "1",   y1: "1", x2: "0",   y2: "0" },
+  SE: { x1: "0.5", y1: "1", x2: "0.5", y2: "0" },
+  SW: { x1: "0",   y1: "1", x2: "1",   y2: "0" },
+  W:  { x1: "0",   y1: "0", x2: "1",   y2: "1" },
+  NW: { x1: "0.5", y1: "0", x2: "0.5", y2: "1" },
+  NE: { x1: "1",   y1: "0", x2: "0",   y2: "1" }
+};
+
+function renderEdgeBlendDefs() {
+  const defs = svgElement("defs", { id: "edge-bleed-defs" });
+
+  Object.entries(EDGE_BLEED_MASK_DIRECTIONS).forEach(([edgeName, direction]) => {
+    const gradientId = `edge-bleed-fade-gradient-${edgeName}`;
+    const maskId = `edge-bleed-fade-mask-${edgeName}`;
+
+    const gradient = svgElement("linearGradient", {
+      id: gradientId,
+      x1: direction.x1,
+      y1: direction.y1,
+      x2: direction.x2,
+      y2: direction.y2,
+      gradientUnits: "objectBoundingBox"
+    });
+
+    [
+      { offset: "0%", opacity: "0.88" },
+      { offset: "55%", opacity: "0.30" },
+      { offset: "100%", opacity: "0" }
+    ].forEach(stop => {
+      gradient.appendChild(svgElement("stop", {
+        offset: stop.offset,
+        "stop-color": "white",
+        "stop-opacity": stop.opacity
+      }));
+    });
+
+    const mask = svgElement("mask", {
+      id: maskId,
+      maskUnits: "objectBoundingBox",
+      maskContentUnits: "objectBoundingBox"
+    });
+
+    mask.appendChild(svgElement("rect", {
+      x: "0",
+      y: "0",
+      width: "1",
+      height: "1",
+      fill: `url(#${gradientId})`
+    }));
+
+    defs.appendChild(gradient);
+    defs.appendChild(mask);
+  });
+
+  svg.appendChild(defs);
+}
+
 function renderEdgeBlendForHex(hex) {
   if (!state.showEdgeBlend) return;
 
@@ -1111,7 +1169,8 @@ function renderEdgeBlendForHex(hex) {
     const poly = svgElement("polygon", {
       points: pointsString(edgeBlendPolygon(hex, edgeName)),
       fill: neighborBase.color,
-      opacity: "0.24",
+      opacity: "0.34",
+      mask: `url(#edge-bleed-fade-mask-${edgeName})`,
       class: "edge-blend"
     });
     svg.appendChild(poly);
@@ -1124,10 +1183,13 @@ function renderEdgeBlendForHex(hex) {
     const chosenTerrain = baseTerrainById[patchData.baseTerrain];
     if (!chosenTerrain) return;
 
+    const cornerMaskEdge = EDGE_NAMES[edgeIndex];
+
     const patch = svgElement("polygon", {
       points: pointsString(patchData.polygon),
       fill: chosenTerrain.color,
-      opacity: "0.16",
+      opacity: "0.22",
+      mask: `url(#edge-bleed-fade-mask-${cornerMaskEdge})`,
       class: "edge-blend outside-corner-blend"
     });
     svg.appendChild(patch);
@@ -1995,6 +2057,7 @@ function render() {
   svg.setAttribute("height", "100%");
   applyViewBox();
   svg.innerHTML = "";
+  renderEdgeBlendDefs();
 
   Object.values(state.hexes).forEach(hex => {
     const center = centerOf(hex.col, hex.row);
