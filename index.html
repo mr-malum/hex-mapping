@@ -1126,9 +1126,9 @@ function renderEdgeBlendDefs() {
     });
 
     [
-      { offset: "0%", opacity: "0.88" },
-      { offset: "55%", opacity: "0.30" },
-      { offset: "100%", opacity: "0" }
+      { offset: "0%", opacity: "1" },
+      { offset: "55%", opacity: "0.75" },
+      { offset: "100%", opacity: "0.25" }
     ].forEach(stop => {
       gradient.appendChild(svgElement("stop", {
         offset: stop.offset,
@@ -1169,7 +1169,7 @@ function renderEdgeBlendForHex(hex) {
     const poly = svgElement("polygon", {
       points: pointsString(edgeBlendPolygon(hex, edgeName)),
       fill: neighborBase.color,
-      opacity: "0.34",
+      opacity: "0.46",
       mask: `url(#edge-bleed-fade-mask-${edgeName})`,
       class: "edge-blend"
     });
@@ -1188,7 +1188,7 @@ function renderEdgeBlendForHex(hex) {
     const patch = svgElement("polygon", {
       points: pointsString(patchData.polygon),
       fill: chosenTerrain.color,
-      opacity: "0.22",
+      opacity: "0.32",
       mask: `url(#edge-bleed-fade-mask-${cornerMaskEdge})`,
       class: "edge-blend outside-corner-blend"
     });
