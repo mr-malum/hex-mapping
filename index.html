@@ -826,7 +826,8 @@ let state = {
   rivers: [],
   showTerrainLabels: true,
   showCoordLabels: true,
-  showEdgeBlend: true
+  showEdgeBlend: true,
+  suppressEdgeBlendForDrag: false
 };
 
 let viewState = {
@@ -1100,66 +1101,8 @@ function outsideCornerPatchCandidate(hex, leftEdgeIndex) {
   return candidates[0];
 }
 
-const EDGE_BLEED_MASK_DIRECTIONS = {
-  E:  { x1: "1",   y1: "1", x2: "0",   y2: "0" },
-  SE: { x1: "0.5", y1: "1", x2: "0.5", y2: "0" },
-  SW: { x1: "0",   y1: "1", x2: "1",   y2: "0" },
-  W:  { x1: "0",   y1: "0", x2: "1",   y2: "1" },
-  NW: { x1: "0.5", y1: "0", x2: "0.5", y2: "1" },
-  NE: { x1: "1",   y1: "0", x2: "0",   y2: "1" }
-};
-
-function renderEdgeBlendDefs() {
-  const defs = svgElement("defs", { id: "edge-bleed-defs" });
-
-  Object.entries(EDGE_BLEED_MASK_DIRECTIONS).forEach(([edgeName, direction]) => {
-    const gradientId = `edge-bleed-fade-gradient-${edgeName}`;
-    const maskId = `edge-bleed-fade-mask-${edgeName}`;
-
-    const gradient = svgElement("linearGradient", {
-      id: gradientId,
-      x1: direction.x1,
-      y1: direction.y1,
-      x2: direction.x2,
-      y2: direction.y2,
-      gradientUnits: "objectBoundingBox"
-    });
-
-    [
-      { offset: "0%", opacity: "1" },
-      { offset: "55%", opacity: "0.75" },
-      { offset: "100%", opacity: "0.25" }
-    ].forEach(stop => {
-      gradient.appendChild(svgElement("stop", {
-        offset: stop.offset,
-        "stop-color": "white",
-        "stop-opacity": stop.opacity
-      }));
-    });
-
-    const mask = svgElement("mask", {
-      id: maskId,
-      maskUnits: "objectBoundingBox",
-      maskContentUnits: "objectBoundingBox"
-    });
-
-    mask.appendChild(svgElement("rect", {
-      x: "0",
-      y: "0",
-      width: "1",
-      height: "1",
-      fill: `url(#${gradientId})`
-    }));
-
-    defs.appendChild(gradient);
-    defs.appendChild(mask);
-  });
-
-  svg.appendChild(defs);
-}
-
 function renderEdgeBlendForHex(hex) {
-  if (!state.showEdgeBlend) return;
+  if (!state.showEdgeBlend || state.suppressEdgeBlendForDrag) return;
 
   EDGE_NAMES.forEach((edgeName) => {
     const neighbor = getNeighborHex(hex, edgeName);
@@ -1169,8 +1112,7 @@ function renderEdgeBlendForHex(hex) {
     const poly = svgElement("polygon", {
       points: pointsString(edgeBlendPolygon(hex, edgeName)),
       fill: neighborBase.color,
-      opacity: "0.46",
-      mask: `url(#edge-bleed-fade-mask-${edgeName})`,
+      opacity: "0.24",
       class: "edge-blend"
     });
     svg.appendChild(poly);
@@ -1183,13 +1125,10 @@ function renderEdgeBlendForHex(hex) {
     const chosenTerrain = baseTerrainById[patchData.baseTerrain];
     if (!chosenTerrain) return;
 
-    const cornerMaskEdge = EDGE_NAMES[edgeIndex];
-
     const patch = svgElement("polygon", {
       points: pointsString(patchData.polygon),
       fill: chosenTerrain.color,
-      opacity: "0.32",
-      mask: `url(#edge-bleed-fade-mask-${cornerMaskEdge})`,
+      opacity: "0.16",
       class: "edge-blend outside-corner-blend"
     });
     svg.appendChild(patch);
@@ -1675,12 +1614,34 @@ function panByScreenDelta(deltaClientX, deltaClientY) {
   applyViewBox();
 }
 
+let renderQueued = false;
+
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
 
 function stopPaintingDrag() {
   const wasDown = state.isPointerDown;
+  const wasSuppressingEdgeBlend = state.suppressEdgeBlendForDrag;
   state.isPointerDown = false;
+  state.suppressEdgeBlendForDrag = false;
   state.paintedThisDrag = new Set();
-  if (wasDown) finishUndoableAction();
+
+  if (wasDown) {
+    finishUndoableAction();
+  }
+
+  // During drag/edit gestures, edge bleed is temporarily skipped to keep the
+  // SVG lighter. Restore a full render after the gesture ends.
+  if (wasDown || wasSuppressingEdgeBlend) {
+    render();
+  }
 }
 
 function isLeftButtonStillDown(event) {
@@ -1771,6 +1732,7 @@ function setTool(tool) {
   if (tool !== "river") state.lastRiverHexId = null;
 
   state.tool = tool;
+  state.suppressEdgeBlendForDrag = false;
   if (tool !== "inspect") state.selectedHexId = null;
   state.dragLastHexId = null;
   state.paintedThisDrag = new Set();
@@ -2057,7 +2019,6 @@ function render() {
   svg.setAttribute("height", "100%");
   applyViewBox();
   svg.innerHTML = "";
-  renderEdgeBlendDefs();
 
   Object.values(state.hexes).forEach(hex => {
     const center = centerOf(hex.col, hex.row);
@@ -2083,10 +2044,15 @@ function render() {
       state.isPointerDown = true;
       state.paintedThisDrag = new Set();
       state.dragLastHexId = null;
+      state.suppressEdgeBlendForDrag = ["terrain", "region-border", "road", "river", "erase"].includes(state.tool);
 
       if (state.tool !== "inspect") beginUndoableAction();
       const changed = applyToolToHex(event, hex.id, false);
-      if (state.tool === "inspect" || changed || state.isUndoActionActive) render();
+      if (state.tool === "inspect") {
+        render();
+      } else if (changed || state.isUndoActionActive) {
+        scheduleRender();
+      }
     });
 
     polygon.addEventListener("pointerup", event => {
@@ -2107,7 +2073,7 @@ function render() {
 
       if (state.isPointerDown && ["terrain", "region-border", "road", "river", "erase"].includes(state.tool)) {
         const changed = applyToolToHex(event, hex.id, true);
-        if (changed || ["region-border", "road", "river"].includes(state.tool)) render();
+        if (changed || ["region-border", "road", "river"].includes(state.tool)) scheduleRender();
       }
     });
 
